@@ -1,0 +1,530 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+}
+
+model Driver {
+  id            String    @id @default(uuid())
+  firstName     String
+  lastName      String
+  email         String    @unique
+  phoneNumber   String    @unique
+  password      String
+  licenseNumber String    @unique
+  isAvailable   Boolean   @default(false)
+  isVerified    Boolean   @default(false)
+  rating        Float     @default(0)
+  totalRides    Int       @default(0)
+  totalEarnings Float     @default(0)
+  profileImage  String?
+  dateOfBirth   DateTime?
+  gender        String?
+  address       String?
+  city          String?
+  state         String?
+  country       String    @default("India")
+  bankDetails   Json?     // Store encrypted bank account details
+  documents     DriverDocument[]
+  vehicle       Vehicle?
+  rides         Ride[]
+  payments      Payment[]
+  subscriptions DriverSubscription[]
+  driverLocation DriverLocation?
+  driverStatus   DriverStatus?
+  rideRequests   DriverRideRequests[]
+  assignedRides  RideRequest[] @relation("AssignedDriver")
+  bookings       Booking[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([isAvailable, isVerified])
+  @@index([city, isAvailable])
+}
+
+model DriverDocument {
+  id                String    @id @default(uuid())
+  driverId          String
+  driver            Driver    @relation(fields: [driverId], references: [id])
+  documentType      String // DRIVING_LICENSE, VEHICLE_REGISTRATION, INSURANCE etc.
+  documentNumber    String?
+  documentUrl       String // URL to the document in storage
+  expiryDate        DateTime?
+  isVerified        Boolean   @default(false)
+  verificationNotes String?
+  uploadDate        DateTime  @default(now())
+  verifiedDate      DateTime?
+
+  @@index([driverId])
+}
+
+model DriverSubscription {
+  id         String       @id @default(cuid())
+  driverId   String
+  driver     Driver       @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  startTime  DateTime
+  expire     DateTime
+  amountPaid Float
+  status     statusDriver // ACTIVE, EXPIRED, CANCELLED
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  paymentId   String?
+  paymentMode String?
+
+  autoRenewed Boolean @default(false)
+
+  //track remaining time if subscription is paused
+  remainingMinutes Int?
+
+  @@index([driverId])
+  @@index([status, expire])
+}
+
+enum statusDriver {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+model Vehicle {
+  id            String    @id @default(uuid())
+  make          String
+  model         String
+  year          Int
+  color         String
+  licensePlate  String    @unique
+  vehicleType   String    // e.g., "sedan", "suv", "luxury"
+  
+  // Additional vehicle information
+  hasCNG        Boolean   @default(false)
+  hasElectric   Boolean   @default(false)
+  roofTop       Boolean   @default(false)
+  fuelType      String?
+  seatingCapacity Int?
+  insuranceStatus Boolean  @default(false)
+  insuranceExpiryDate DateTime?
+  registrationExpiryDate DateTime?
+  vehicleImages  Json?    // Will store { cover: string[], interior: string[], exterior: string[] }
+
+  // Operational status
+  isActive      Boolean   @default(true)
+  isAvailable   Boolean   @default(true)
+  isInService   Boolean   @default(true)
+  lastMaintenance DateTime?
+  nextMaintenance DateTime?
+
+  // Current status
+  currentLocation Json?   // {latitude: number, longitude: number}
+  currentSpeed    Float?
+  currentBattery  Float?  // For electric vehicles
+  currentFuel     Float?  // For fuel vehicles
+
+  // Operational metrics
+  totalTrips     Int     @default(0)
+  totalDistance  Float   @default(0)
+  totalEarnings  Float   @default(0)
+  averageRating  Float   @default(0)
+
+  // Additional features
+  features       Json?   // AC, music, wifi, etc.
+  amenities      Json?   // Water, tissues, etc.
+  documents      Json?   // Additional vehicle documents
+
+  // Service history
+  serviceHistory Json?   // Maintenance and service records
+
+  // Zone and area
+  currentZoneId  String?
+  currentZone    ServiceZone? @relation(fields: [currentZoneId], references: [id])
+
+  // Relationships
+  driver        Driver    @relation(fields: [driverId], references: [id])
+  driverId      String    @unique
+  driverLocation DriverLocation?
+  bookings      Booking[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([isActive, isAvailable])
+  @@index([currentZoneId])
+  @@index([isInService])
+  @@map("vehicle")
+}
+
+model Ride {
+  id            String    @id @default(uuid())
+  status        String    // "pending", "accepted", "in_progress", "completed", "cancelled"
+  pickupLocation String
+  dropoffLocation String
+  startTime     DateTime?
+  endTime       DateTime?
+  fare          Float
+  distance      Float
+  duration      Int?      // Duration in minutes
+  baseFare      Float
+  surgeMultiplier Float   @default(1.0)
+  waitingTime   Int?      // Waiting time in minutes
+  cancellationFee Float?
+  cancellationReason String?
+  cancelledBy   String?   // "user", "driver", "system"
+  driver        Driver    @relation(fields: [driverId], references: [id])
+  driverId      String
+  user          User      @relation(fields: [userId], references: [id])
+  userId        String
+  payment       Payment?
+  serviceZone   ServiceZone? @relation(fields: [zoneId], references: [id])
+  zoneId        String?
+  route         Json?     // Store route details
+  waypoints     Json?     // Store intermediate stops
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([driverId, status])
+  @@index([userId, status])
+  @@index([zoneId])
+}
+
+model User {
+  id            String    @id @default(uuid())
+  firstName     String
+  lastName      String
+  email         String    @unique
+  phoneNumber   String    @unique
+  password      String
+  profileImage  String?
+  dateOfBirth   DateTime?
+  gender        String?
+  address       String?
+  city          String?
+  state         String?
+  country       String    @default("India")
+  rides         Ride[]
+  payments      Payment[]
+  locations     UserLocation[]
+  rideRequests  RideRequest[]
+  bookings      Booking[]
+  wallet        Wallet?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([city])
+}
+
+model Payment {
+  id            String    @id @default(uuid())
+  amount        Float
+  status        String    // "pending", "completed", "failed", "refunded"
+  paymentMethod String    // "credit_card", "debit_card", "cash", "wallet"
+  transactionId String?   @unique
+  currency      String    @default("INR")
+  description   String?
+  metadata      Json?     // Additional payment details
+  ride          Ride      @relation(fields: [rideId], references: [id])
+  rideId        String    @unique
+  driver        Driver    @relation(fields: [driverId], references: [id])
+  driverId      String
+  user          User      @relation(fields: [userId], references: [id])
+  userId        String
+  refundReason  String?
+  refundedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([driverId, status])
+  @@index([userId, status])
+}
+
+// Real-time driver location tracking
+model DriverLocation {
+  id       String  @id @default(cuid())
+  driverId String  @unique
+  driver   Driver  @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  vehicleId String? @unique
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id])
+
+  // Location data
+  latitude  Float
+  longitude Float
+
+  // Metadata
+  timestamp DateTime @default(now())
+
+  // Status context
+  isOnline    Boolean @default(true)
+  isAvailable Boolean @default(true)
+  isInTrip    Boolean @default(false)
+
+  // For optimizing nearest driver queries
+  lastUpdatedAt DateTime @default(now()) @updatedAt
+
+  @@index([driverId, timestamp])
+  @@index([latitude, longitude])
+  @@index([timestamp])
+  @@index([isOnline, isAvailable])
+  @@map("driver_location")
+}
+
+// User location history and current location
+model UserLocation {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Location data
+  latitude  Float
+  longitude Float
+  accuracy  Float?
+  address   String?
+
+  timestamp        DateTime @default(now())
+  isActive         Boolean  @default(true)
+  isFrequentlyUsed Boolean  @default(false)
+
+  @@index([latitude, longitude])
+  @@index([userId, isActive])
+  @@index([userId, isFrequentlyUsed])
+  @@map("user_location")
+}
+
+// Driver status enum
+enum DriverStatusType {
+  OFFLINE
+  ONLINE
+  BUSY
+  BREAK
+}
+
+// Driver availability and status tracking
+model DriverStatus {
+  id       String @id @default(cuid())
+  driverId String @unique
+  driver   Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  status     DriverStatusType @default(OFFLINE)
+  lastPingAt DateTime         @default(now())
+  totalOnlineHours Float      @default(0)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@map("driver_status")
+}
+
+// Ride request and matching system
+model RideRequest {
+  id        String @id @default(cuid())
+  requestId String @unique @default(cuid())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id])
+
+  // Trip details
+  pickupLatitude  Float
+  pickupLongitude Float
+  pickupAddress   String?
+  dropLatitude    Float?
+  dropLongitude   Float?
+  dropAddress     String?
+
+  // Request parameters
+  rideType          String @default("STANDARD")
+  maxWaitTime       Int    @default(300)
+  estimatedDistance Float?
+  estimatedDuration Int?
+  estimatedFare     Float?
+
+  // Status and lifecycle
+  status      String   @default("PENDING")
+  requestedAt DateTime @default(now())
+  expiresAt   DateTime
+
+  // Matching details
+  assignedDriverId String?
+  assignedDriver   Driver?   @relation("AssignedDriver", fields: [assignedDriverId], references: [id])
+  matchedAt        DateTime?
+  acceptedAt       DateTime?
+
+  // Cancellation
+  cancelledAt        DateTime?
+  cancellationReason String?
+  cancelledBy        String?
+
+  // Final booking reference
+  bookingId String?
+  booking   Booking?
+
+  // Broadcast tracking
+  driverRequests DriverRideRequests[]
+
+  @@index([status, requestedAt])
+  @@index([pickupLatitude, pickupLongitude])
+  @@index([userId, status])
+  @@index([requestedAt])
+  @@map("ride_request")
+}
+
+// Track which drivers received specific ride requests
+model DriverRideRequests {
+  id            String      @id @default(cuid())
+  driverId      String
+  driver        Driver      @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  rideRequestId String
+  rideRequest   RideRequest @relation(fields: [rideRequestId], references: [id], onDelete: Cascade)
+
+  sentAt      DateTime  @default(now())
+  receivedAt  DateTime?
+  respondedAt DateTime?
+  response    String?
+
+  distanceToPickup Float?
+  etaToPickup      Int?
+  rejectionReason String?
+
+  @@unique([driverId, rideRequestId])
+  @@index([rideRequestId, sentAt])
+  @@map("driver_ride_requests")
+}
+
+// Service zones and geofencing
+model ServiceZone {
+  id      String @id @default(cuid())
+  name    String
+  city    String
+  country String @default("India")
+
+  boundary Json
+  coordinates Json // Store polygon coordinates as JSON
+
+  isActive   Boolean @default(true)
+  baseFare   Float
+  perKmRate  Float
+  perMinRate Float
+  minFare    Float
+  maxFare    Float?
+  waitingChargePerMin Float @default(0)
+  cancellationFee    Float @default(0)
+
+  surgeMultiplier Float     @default(1.0)
+  surgeActive     Boolean   @default(false)
+  surgeReason     String?
+  surgeStartTime  DateTime?
+  surgeEndTime    DateTime?
+
+  maxDrivers     Int?
+  currentDrivers Int  @default(0)
+  minDrivers     Int  @default(0)
+
+  demandLevel   Float @default(1.0)
+  trafficFactor Float @default(1.0)
+  weatherFactor Float @default(1.0)
+
+  operatingHours Json? // Store operating hours for each day
+  holidays      Json? // Store holiday dates
+
+  bbox Json?
+
+  rides         Ride[]
+  vehicles      Vehicle[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([city, isActive])
+  @@index([demandLevel, isActive])
+}
+
+// Trip logging for analytics and debugging
+model TripLog {
+  id        String  @id @default(cuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  latitude  Float
+  longitude Float
+  timestamp DateTime @default(now())
+
+  eventType String
+  metadata Json?
+
+  @@index([bookingId, timestamp])
+  @@index([timestamp])
+  @@map("trip_log")
+}
+
+// Booking model for completed ride requests
+model Booking {
+  id            String    @id @default(cuid())
+  rideRequestId String    @unique
+  rideRequest   RideRequest @relation(fields: [rideRequestId], references: [id])
+  driverId      String
+  driver        Driver    @relation(fields: [driverId], references: [id])
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  vehicleId     String?  @unique
+  vehicle       Vehicle? @relation(fields: [vehicleId], references: [id])
+  
+  // Trip details
+  startTime     DateTime?
+  endTime       DateTime?
+  actualDistance Float?
+  actualDuration Int?
+  finalFare     Float?
+  
+  // Status
+  status        String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, CANCELLED
+  paymentStatus String    @default("PENDING") // PENDING, PAID, FAILED
+  
+  // Trip logs
+  tripLogs      TripLog[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([driverId, status])
+  @@index([userId, status])
+  @@index([status])
+  @@index([vehicleId])
+  @@map("booking")
+}
+
+// Add Wallet model for driver and user balances
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  balance   Float    @default(0)
+  currency  String   @default("INR")
+  isActive  Boolean  @default(true)
+  transactions WalletTransaction[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, isActive])
+}
+
+model WalletTransaction {
+  id        String   @id @default(cuid())
+  walletId  String
+  wallet    Wallet   @relation(fields: [walletId], references: [id])
+  amount    Float
+  type      String   // "credit", "debit"
+  status    String   // "pending", "completed", "failed"
+  reference String?  // Reference to payment or ride
+  description String?
+  createdAt DateTime @default(now())
+
+  @@index([walletId, createdAt])
+}
+
+
