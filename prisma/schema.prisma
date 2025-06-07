@@ -179,10 +179,15 @@ model Ride {
   cancellationFee Float?
   cancellationReason String?
   cancelledBy   String?   // "user", "driver", "system"
+  
+  // Driver relation
   driver        Driver    @relation(fields: [driverId], references: [id])
   driverId      String
-  user          User      @relation(fields: [userId], references: [id])
-  userId        String
+  
+  // Rider relation
+  rider         RiderInfo @relation(fields: [riderId], references: [id])
+  riderId       String
+  
   payment       Payment?
   serviceZone   ServiceZone? @relation(fields: [zoneId], references: [id])
   zoneId        String?
@@ -193,34 +198,8 @@ model Ride {
 
   @@index([status, createdAt])
   @@index([driverId, status])
-  @@index([userId, status])
+  @@index([riderId, status])
   @@index([zoneId])
-}
-
-model User {
-  id            String    @id @default(uuid())
-  firstName     String
-  lastName      String
-  email         String    @unique
-  phoneNumber   String    @unique
-  password      String
-  profileImage  String?
-  dateOfBirth   DateTime?
-  gender        String?
-  address       String?
-  city          String?
-  state         String?
-  country       String    @default("India")
-  rides         Ride[]
-  payments      Payment[]
-  locations     UserLocation[]
-  rideRequests  RideRequest[]
-  bookings      Booking[]
-  wallet        Wallet?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  @@index([city])
 }
 
 model Payment {
@@ -232,12 +211,19 @@ model Payment {
   currency      String    @default("INR")
   description   String?
   metadata      Json?     // Additional payment details
+  
+  // Ride relation
   ride          Ride      @relation(fields: [rideId], references: [id])
   rideId        String    @unique
+  
+  // Driver relation
   driver        Driver    @relation(fields: [driverId], references: [id])
   driverId      String
-  user          User      @relation(fields: [userId], references: [id])
-  userId        String
+  
+  // Rider relation
+  rider         RiderInfo @relation(fields: [riderId], references: [id])
+  riderId       String
+  
   refundReason  String?
   refundedAt    DateTime?
   createdAt     DateTime  @default(now())
@@ -245,7 +231,7 @@ model Payment {
 
   @@index([status, createdAt])
   @@index([driverId, status])
-  @@index([userId, status])
+  @@index([riderId, status])
 }
 
 // Real-time driver location tracking
@@ -278,28 +264,6 @@ model DriverLocation {
   @@map("driver_location")
 }
 
-// User location history and current location
-model UserLocation {
-  id     String @id @default(cuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  // Location data
-  latitude  Float
-  longitude Float
-  accuracy  Float?
-  address   String?
-
-  timestamp        DateTime @default(now())
-  isActive         Boolean  @default(true)
-  isFrequentlyUsed Boolean  @default(false)
-
-  @@index([latitude, longitude])
-  @@index([userId, isActive])
-  @@index([userId, isFrequentlyUsed])
-  @@map("user_location")
-}
-
 // Driver status enum
 enum DriverStatusType {
   OFFLINE
@@ -327,8 +291,10 @@ model DriverStatus {
 model RideRequest {
   id        String @id @default(cuid())
   requestId String @unique @default(cuid())
-  userId    String
-  user      User   @relation(fields: [userId], references: [id])
+  
+  // Rider relation
+  rider         RiderInfo @relation(fields: [riderId], references: [id])
+  riderId       String
 
   // Trip details
   pickupLatitude  Float
@@ -370,7 +336,7 @@ model RideRequest {
 
   @@index([status, requestedAt])
   @@index([pickupLatitude, pickupLongitude])
-  @@index([userId, status])
+  @@index([riderId, status])
   @@index([requestedAt])
   @@map("ride_request")
 }
@@ -467,10 +433,16 @@ model Booking {
   id            String    @id @default(cuid())
   rideRequestId String    @unique
   rideRequest   RideRequest @relation(fields: [rideRequestId], references: [id])
-  driverId      String
+  
+  // Driver relation
   driver        Driver    @relation(fields: [driverId], references: [id])
-  userId        String
-  user          User      @relation(fields: [userId], references: [id])
+  driverId      String
+  
+  // Rider relation
+  rider         RiderInfo @relation(fields: [riderId], references: [id])
+  riderId       String
+  
+  // Vehicle relation
   vehicleId     String?  @unique
   vehicle       Vehicle? @relation(fields: [vehicleId], references: [id])
   
@@ -492,39 +464,37 @@ model Booking {
   updatedAt     DateTime  @updatedAt
 
   @@index([driverId, status])
-  @@index([userId, status])
+  @@index([riderId, status])
   @@index([status])
   @@index([vehicleId])
   @@map("booking")
 }
 
-// Add Wallet model for driver and user balances
-model Wallet {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id])
-  balance   Float    @default(0)
-  currency  String   @default("INR")
-  isActive  Boolean  @default(true)
-  transactions WalletTransaction[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// Add RiderInfo model for tracking rider details
+model RiderInfo {
+  id            String    @id @default(uuid())
+  riderId       String    @unique // External reference to rider service
+  firstName     String
+  lastName      String
+  phoneNumber   String
+  profileImage  String?
+  rating        Float     @default(0)
+  totalRides    Int       @default(0)
+  
+  // Track ride history
+  rides         Ride[]
+  rideRequests  RideRequest[]
+  bookings      Booking[]
+  
+  // Track payment history
+  payments      Payment[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  @@index([userId, isActive])
-}
-
-model WalletTransaction {
-  id        String   @id @default(cuid())
-  walletId  String
-  wallet    Wallet   @relation(fields: [walletId], references: [id])
-  amount    Float
-  type      String   // "credit", "debit"
-  status    String   // "pending", "completed", "failed"
-  reference String?  // Reference to payment or ride
-  description String?
-  createdAt DateTime @default(now())
-
-  @@index([walletId, createdAt])
+  @@index([riderId])
+  @@index([phoneNumber])
+  @@map("rider_info")
 }
 
 
