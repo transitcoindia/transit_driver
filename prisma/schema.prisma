@@ -16,11 +16,52 @@ datasource db {
 
 model Driver {
   id            String    @id @default(uuid())
-  firstName     String
-  lastName      String
+  name          String
   email         String    @unique
   phoneNumber   String    @unique
   password      String
+  emailVerified Boolean   @default(false)
+  phoneNumberVerified Boolean   @default(false)
+  driverDetails DriverDetails?
+  documents     DriverDocument[]
+  vehicle       Vehicle?
+  rides         Ride[]
+  payments      Payment[]
+  subscriptions DriverSubscription[]
+  driverLocation DriverLocation?
+  driverStatus   DriverStatus?
+  rideRequests   DriverRideRequests[]
+  assignedRides  RideRequest[] @relation("AssignedDriver")
+  bookings       Booking[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verification")
+}
+
+model Otp {
+  id          String   @id @default(cuid())
+  phoneNumber String
+  otp         String
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  type        String?  @default("VERIFICATION")
+
+  @@map("otp")
+}
+model DriverDetails {
+  id            String    @id @default(uuid())
+  driver        Driver    @relation(fields: [driverId], references: [id])
+  driverId      String    @unique
   licenseNumber String    @unique
   isAvailable   Boolean   @default(false)
   isVerified    Boolean   @default(false)
@@ -35,16 +76,6 @@ model Driver {
   state         String?
   country       String    @default("India")
   bankDetails   Json?     // Store encrypted bank account details
-  documents     DriverDocument[]
-  vehicle       Vehicle?
-  rides         Ride[]
-  payments      Payment[]
-  subscriptions DriverSubscription[]
-  driverLocation DriverLocation?
-  driverStatus   DriverStatus?
-  rideRequests   DriverRideRequests[]
-  assignedRides  RideRequest[] @relation("AssignedDriver")
-  bookings       Booking[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

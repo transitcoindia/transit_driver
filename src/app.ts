@@ -4,6 +4,7 @@ import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
 import { createServer } from 'http';
 import dotenv from 'dotenv';
+import  driverRoutes  from './routes/driverRoutes'
 // import { initializeSocketServer } from './socket/socketServer';
 
 // Load environment variables
@@ -25,7 +26,7 @@ app.use(express.json());
 //app.use(morgan('dev'));
 
 // Routes
-
+app.use('/api/driver', driverRoutes);
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
