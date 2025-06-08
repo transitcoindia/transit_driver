@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "ts-node ./src/app.ts",
+    "dev:watch": "nodemon --exec ts-node ./src/app.ts",
     "build": "tsc",
     "start": "node dist/app.js",
     "postinstall": "prisma generate",
@@ -54,6 +55,7 @@
     "express-session": "^1.18.1",
     "fast2sms": "^1.0.3",
     "fastify": "^5.3.3",
+    "google-auth-library": "^9.15.1",
     "jsonwebtoken": "^9.0.2",
     "kafkajs": "^2.2.4",
     "libphonenumber": "^0.0.9",

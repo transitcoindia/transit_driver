@@ -6,12 +6,12 @@ if (!process.env.JWT_SECRET) {
 
 // Legacy function to generate JWTs
 export const generateToken = (userId: string) => {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET as string, { expiresIn: '1h' });
+  return jwt.sign({ id: userId }, process.env.JWT_SECRET as string, { expiresIn: '30d' });
 };
 
-// Generate access token with 15-minute expiration
+// Generate access token with 30 days expiration
 export const generateAccessToken = (userId: string) => {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET as string, { expiresIn: '15m' });
+  return jwt.sign({ id: userId }, process.env.JWT_SECRET as string, { expiresIn: '30d' });
 };
 
 // Verify access token

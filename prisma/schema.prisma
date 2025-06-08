@@ -22,6 +22,8 @@ model Driver {
   password      String
   emailVerified Boolean   @default(false)
   phoneNumberVerified Boolean   @default(false)
+  resetToken    String?   @unique
+  resetTokenExpiresAt DateTime?
   driverDetails DriverDetails?
   documents     DriverDocument[]
   vehicle       Vehicle?
