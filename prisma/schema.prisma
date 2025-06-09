@@ -35,6 +35,14 @@ model Driver {
   bookings       Booking[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  firstName     String
+  lastName      String
+  licenseNumber String    @unique
+  vehicleNumber String    @unique
+  isVerified    Boolean   @default(false)
+  isActive      Boolean   @default(true)
+  otp           String?
+  otpExpiry     DateTime?
 }
 
 model Verification {

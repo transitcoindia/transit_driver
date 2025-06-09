@@ -29,3 +29,4 @@ export const sendOtp = async (phoneNumber: string, otp: string) => {
     console.error("Error sending OTP:", error);
   }
 };
+
