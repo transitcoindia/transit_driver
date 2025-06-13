@@ -32,6 +32,7 @@ export const driverVehicleInfoSchema = z.object({
     insuranceExpiryDate: z.string().optional(),
     registrationExpiryDate: z.string().optional(),
     drivingExperience: z.number().int().min(0, "Driving experience cannot be negative"),
+    licenseNumber: z.string().min(1, "License number is required").optional()
 });
 
 // Driver document upload validation schema

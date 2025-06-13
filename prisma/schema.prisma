@@ -78,6 +78,7 @@ model DriverDetails {
   state         String?
   country       String    @default("India")
   bankDetails   Json?     // Store encrypted bank account details
+  drivingExperience Int?  // Years of driving experience
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { createServer } from 'http';
 import dotenv from 'dotenv';
 import  driverRoutes  from './routes/driverRoutes'
+import { DriverWebSocketClient } from './services/websocketClient';
 // import { initializeSocketServer } from './socket/socketServer';
 
 // Load environment variables
@@ -17,8 +18,13 @@ const httpServer = createServer(app);
 // Initialize Prisma
 const prisma = new PrismaClient();
 
-// Initialize Socket.IO
-// initializeSocketServer(httpServer);
+// Initialize WebSocket client
+const driverWebSocketClient = new DriverWebSocketClient(process.env.DRIVER_ID || 'default_driver_id');
+
+// Connect to WebSocket server
+driverWebSocketClient.connect().catch(error => {
+  console.error('Failed to connect to WebSocket server:', error);
+});
 
 // Middleware
 app.use(cors());
@@ -40,11 +46,11 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 });
 
 app.get('/', (req: Request, res: Response) => {
-  res.send('Hello World');
+  res.send('Driver Backend Service');
 });
 
 // Start server
 const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => {
-  console.log(`Server running on port http://localhost:${PORT}`);
+  console.log(`Driver backend server running on port http://localhost:${PORT}`);
 });
