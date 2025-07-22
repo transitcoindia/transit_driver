@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 export class DriverWebSocketClient {
   private socket: Socket;
   private driverId: string;
+  private rideOfferHandler?: (offer: any, respond: (response: 'accept' | 'decline', offerId: string) => void) => void;
 
   constructor(driverId: string) {
     this.driverId = driverId;
@@ -31,6 +32,26 @@ export class DriverWebSocketClient {
 
     this.socket.on('error', (error) => {
       console.error('WebSocket error:', error);
+    });
+
+    // Listen for ride offers
+    this.socket.on('rideOffer', (offer) => {
+      if (this.rideOfferHandler) {
+        this.rideOfferHandler(offer, (response: 'accept' | 'decline', offerId: string) => {
+          this.socket.emit('rideOfferResponse', {
+            offerId,
+            response,
+            driverId: this.driverId
+          });
+        });
+      } else {
+        // No handler set, decline by default
+        this.socket.emit('rideOfferResponse', {
+          offerId: offer.offerId,
+          response: 'decline',
+          driverId: this.driverId
+        });
+      }
     });
   }
 
@@ -67,5 +88,10 @@ export class DriverWebSocketClient {
 
   public on(event: string, callback: (data: any) => void) {
     this.socket.on(event, callback);
+  }
+
+  // Set a handler for ride offers
+  public onRideOffer(handler: (offer: any, respond: (response: 'accept' | 'decline', offerId: string) => void) => void) {
+    this.rideOfferHandler = handler;
   }
 } 

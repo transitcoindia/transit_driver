@@ -18,6 +18,7 @@ import  { submitVehicleInfo, uploadDocuments } from '../controllers/driver_detai
 import { authenticate } from '../middleware/authMiddle';
 import { limiter } from '../middleware/rateLimiter';
 import { NextFunction, Request, Response } from 'express';
+import { getCellId, getNeighbors, getDistance, isPointInRegion } from '../utils/s2Service';
 // import { documentUpload, uploadLimiter } from '../middleware/uploadMiddleware';
 
 
@@ -143,5 +144,65 @@ router.post(
     handleMulterError,
     (uploadDocuments as unknown) as RequestHandler
 );
+
+// S2 cell id route
+router.post('/s2/cellid', authenticate as RequestHandler, async (req: Request, res: Response) => {
+  try {
+    const { lat, lng, level } = req.body;
+    if (typeof lat !== 'number' || typeof lng !== 'number') {
+      res.status(400).json({ error: 'lat and lng are required and must be numbers' });
+      return;
+    }
+    const cellId = await getCellId(lat, lng, level);
+    res.json({ cellId });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get cell id', details: error instanceof Error ? error.message : error });
+  }
+});
+
+// S2 neighbors route
+router.post('/s2/neighbors', authenticate as RequestHandler, async (req: Request, res: Response) => {
+  try {
+    const { cell_id, level } = req.body;
+    if (!cell_id) {
+      res.status(400).json({ error: 'cell_id is required' });
+      return;
+    }
+    const neighbors = await getNeighbors(cell_id, level);
+    res.json({ neighbors });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get neighbors', details: error instanceof Error ? error.message : error });
+  }
+});
+
+// S2 distance route
+router.post('/s2/distance', authenticate as RequestHandler, async (req: Request, res: Response) => {
+  try {
+    const { lat1, lng1, lat2, lng2 } = req.body;
+    if (typeof lat1 !== 'number' || typeof lng1 !== 'number' || typeof lat2 !== 'number' || typeof lng2 !== 'number') {
+      res.status(400).json({ error: 'lat1, lng1, lat2, lng2 are required and must be numbers' });
+      return;
+    }
+    const distance = await getDistance(lat1, lng1, lat2, lng2);
+    res.json({ distance });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get distance', details: error instanceof Error ? error.message : error });
+  }
+});
+
+// S2 point-in-region route
+router.post('/s2/point-in-region', authenticate as RequestHandler, async (req: Request, res: Response) => {
+  try {
+    const { lat, lng, region } = req.body;
+    if (typeof lat !== 'number' || typeof lng !== 'number' || !Array.isArray(region)) {
+      res.status(400).json({ error: 'lat, lng, and region (array) are required' });
+      return;
+    }
+    const inside = await isPointInRegion(lat, lng, region);
+    res.json({ inside });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to check point in region', details: error instanceof Error ? error.message : error });
+  }
+});
 
 export default router;
