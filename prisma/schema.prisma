@@ -187,6 +187,7 @@ model Vehicle {
   driverId      String    @unique
   driverLocation DriverLocation?
   bookings      Booking[]
+  ride          Ride[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -198,21 +199,32 @@ model Vehicle {
 }
 
 model Ride {
-  id            String    @id @default(uuid())
-  status        String    // "pending", "accepted", "in_progress", "completed", "cancelled"
-  pickupLocation String
-  dropoffLocation String
-  startTime     DateTime?
-  endTime       DateTime?
-  fare          Float
-  distance      Float
-  duration      Int?      // Duration in minutes
-  baseFare      Float
-  surgeMultiplier Float   @default(1.0)
-  waitingTime   Int?      // Waiting time in minutes
-  cancellationFee Float?
+  id                String    @id @default(uuid())
+  rideCode          String?   @unique
+  status            String    // "pending", "accepted", "in_progress", "completed", "cancelled"
+  pickupLatitude    Float
+  pickupLongitude   Float
+  pickupAddress     String?
+  dropLatitude      Float?
+  dropLongitude     Float?
+  dropAddress       String?
+  startTime         DateTime?
+  endTime           DateTime?
+  estimatedFare     Float?
+  actualFare        Float?
+  estimatedDistance Float?
+  actualDistance    Float?
+  estimatedDuration Int?      // in minutes
+  actualDuration    Int?      // in minutes
+  baseFare          Float?
+  surgeMultiplier   Float     @default(1.0)
+  waitingTime       Int?      // in minutes
+  cancellationFee   Float?
   cancellationReason String?
-  cancelledBy   String?   // "user", "driver", "system"
+  cancelledBy       String?   // "user", "driver", "system"
+  paymentStatus     String?
+  paymentMethod     String?
+  transactionId     String?
   
   // Driver relation
   driver        Driver    @relation(fields: [driverId], references: [id])
@@ -222,18 +234,25 @@ model Ride {
   rider         RiderInfo @relation(fields: [riderId], references: [id])
   riderId       String
   
-  payment       Payment?
-  serviceZone   ServiceZone? @relation(fields: [zoneId], references: [id])
-  zoneId        String?
-  route         Json?     // Store route details
-  waypoints     Json?     // Store intermediate stops
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  vehicleId         String?
+  vehicle           Vehicle? @relation(fields: [vehicleId], references: [id])
+  serviceZoneId     String?
+  serviceZone       ServiceZone? @relation(fields: [serviceZoneId], references: [id])
+
+  payment Payment? @relation("RidePayment")
+  paymentId String?
+
+  route             Json?    // Store route details
+  waypoints         Json?    // Store intermediate stops
+  driverLocationUpdates Json?
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([status, createdAt])
   @@index([driverId, status])
   @@index([riderId, status])
-  @@index([zoneId])
+  @@index([serviceZoneId])
 }
 
 model Payment {
@@ -246,9 +265,8 @@ model Payment {
   description   String?
   metadata      Json?     // Additional payment details
   
-  // Ride relation
-  ride          Ride      @relation(fields: [rideId], references: [id])
-  rideId        String    @unique
+  ride   Ride   @relation("RidePayment", fields: [rideId], references: [id])
+  rideId String @unique
   
   // Driver relation
   driver        Driver    @relation(fields: [driverId], references: [id])

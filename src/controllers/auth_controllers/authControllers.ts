@@ -11,6 +11,7 @@ import { driverDocumentSchema, driverSignupSchema, driverVehicleInfoSchema } fro
 import { sendOtp } from '../../utils/otpService';
 import { OAuth2Client } from 'google-auth-library';
 import { addHours, isAfter } from 'date-fns';
+import { DriverWebSocketClient } from '../../services/websocketClient';
 
 const client = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
@@ -214,6 +215,9 @@ export const verifyDriverEmail = async (req: Request, res: Response) => {
 };
 
 // Email login
+
+let driverWebSocketClient: DriverWebSocketClient | null = null;
+
 export const loginWithEmail = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { email, password } = req.body;
@@ -249,6 +253,13 @@ export const loginWithEmail = async (req: Request, res: Response, next: NextFunc
 
         // Generate access token
         const accessToken = generateAccessToken(driver.id);
+        // If already connected, disconnect previous client
+        if (driverWebSocketClient) {
+          driverWebSocketClient.disconnect();
+        }
+        // Create new WebSocket client with dynamic driver ID and accessToken
+        driverWebSocketClient = new DriverWebSocketClient(driver.id, accessToken);
+        await driverWebSocketClient.connect();
 
         return res.status(200).json({
             success: true,
@@ -268,6 +279,7 @@ export const loginWithEmail = async (req: Request, res: Response, next: NextFunc
             }
         });
     } catch (error) {
+      console.log(error)
         return next(new AppError('An error occurred during login', 500));
     }
 };

@@ -5,7 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { createServer } from 'http';
 import dotenv from 'dotenv';
 import  driverRoutes  from './routes/driverRoutes'
-import { DriverWebSocketClient } from './services/websocketClient';
+// import { DriverWebSocketClient } from './services/websocketClient';
 // import { initializeSocketServer } from './socket/socketServer';
 
 // Load environment variables
@@ -19,12 +19,12 @@ const httpServer = createServer(app);
 const prisma = new PrismaClient();
 
 // Initialize WebSocket client
-const driverWebSocketClient = new DriverWebSocketClient(process.env.DRIVER_ID || 'default_driver_id');
+// const driverWebSocketClient = new DriverWebSocketClient(process.env.DRIVER_ID || 'default_driver_id');
 
 // Connect to WebSocket server
-driverWebSocketClient.connect().catch(error => {
-  console.error('Failed to connect to WebSocket server:', error);
-});
+// driverWebSocketClient.connect().catch(error => {
+//   console.error('Failed to connect to WebSocket server:', error);
+// });
 
 // Middleware
 app.use(cors());
