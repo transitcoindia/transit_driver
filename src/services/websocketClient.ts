@@ -5,28 +5,71 @@ export class DriverWebSocketClient {
   private socket: Socket;
   private driverId: string;
   private accessToken: string;
+  private isConnected: boolean = false;
+  private reconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 5;
 
   constructor(driverId: string, accessToken: string) {
     this.driverId = driverId;
     this.accessToken = accessToken;
+    
+    // Connect to API Gateway WebSocket server
     this.socket = io(process.env.API_GATEWAY_WS_URL || 'http://localhost:3005', {
-      auth: { driverId: this.driverId, accessToken: this.accessToken }
+      transports: ['websocket', 'polling'],
+      timeout: 45000,
+      reconnection: true,
+      reconnectionAttempts: this.maxReconnectAttempts,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      auth: { 
+        driverId: this.driverId, 
+        accessToken: this.accessToken 
+      }
     });
+    
     this.setupEventListeners();
   }
 
   private setupEventListeners() {
     this.socket.on('connect', () => {
-      console.log('Connected to WebSocket server');
-      this.socket.emit('authenticate', { driverId: this.driverId, accessToken: this.accessToken });
+      console.log('🔌 Connected to API Gateway WebSocket server');
+      this.isConnected = true;
+      this.reconnectAttempts = 0;
+      
+      // Authenticate immediately after connection
+      this.authenticate();
     });
 
     this.socket.on('authenticated', (response) => {
-      console.log('Driver authenticated:', response);
+      console.log('✅ Driver authenticated:', response);
     });
 
-    this.socket.on('disconnect', () => {
-      console.log('Disconnected from WebSocket server');
+    this.socket.on('disconnect', (reason) => {
+      console.log('🔌 Disconnected from API Gateway WebSocket server:', reason);
+      this.isConnected = false;
+      
+      if (reason === 'io server disconnect') {
+        // Server disconnected, try to reconnect
+        this.socket.connect();
+      }
+    });
+
+    this.socket.on('connect_error', (error) => {
+      console.error('❌ Connection error:', error);
+      this.reconnectAttempts++;
+    });
+
+    this.socket.on('reconnect', (attemptNumber) => {
+      console.log('🔄 Reconnected after', attemptNumber, 'attempts');
+      this.authenticate();
+    });
+
+    this.socket.on('reconnect_error', (error) => {
+      console.error('❌ Reconnection error:', error);
+    });
+
+    this.socket.on('reconnect_failed', () => {
+      console.error('❌ Reconnection failed after', this.maxReconnectAttempts, 'attempts');
     });
 
     this.socket.on('error', (error) => {
@@ -37,6 +80,28 @@ export class DriverWebSocketClient {
       console.log('Received new ride request:', rideData);
       this.promptAcceptOrReject(rideData.rideId);
     });
+
+    // Handle server ping to keep connection alive
+    this.socket.on('serverPing', (data) => {
+      console.log('🔄 Server ping received:', data);
+      // Respond with pong
+      this.socket.emit('pong', { timestamp: Date.now() });
+    });
+
+    // Handle connection info
+    this.socket.on('connectionInfo', (data) => {
+      console.log('📊 Connection info:', data);
+    });
+  }
+
+  private authenticate() {
+    if (this.socket && this.isConnected) {
+      console.log('🔐 Authenticating driver...');
+      this.socket.emit('authenticate', { 
+        driverId: this.driverId, 
+        accessToken: this.accessToken 
+      });
+    }
   }
 
   private promptAcceptOrReject(rideId: string) {
@@ -69,35 +134,50 @@ export class DriverWebSocketClient {
   public disconnect() {
     if (this.socket.connected) {
       this.socket.disconnect();
+      this.isConnected = false;
     }
   }
 
   public updateLocation(location: { latitude: number; longitude: number }) {
-    this.socket.emit('driverLocationUpdate', {
-      driverId: this.driverId,
-      location,
-      timestamp: new Date().toISOString()
-    });
+    if (this.isConnected) {
+      this.socket.emit('driverLocationUpdate', {
+        driverId: this.driverId,
+        location,
+        timestamp: new Date().toISOString()
+      });
+    }
   }
 
   public acceptRide(rideId: string) {
-    this.socket.emit('acceptRide', {
-      driverId: this.driverId,
-      accessToken: this.accessToken, // send token here
-      rideId,
-      timestamp: new Date().toISOString()
-    });
+    if (this.isConnected) {
+      this.socket.emit('acceptRide', {
+        driverId: this.driverId,
+        accessToken: this.accessToken, // send token here
+        rideId,
+        timestamp: new Date().toISOString()
+      });
+    }
   }
 
   public rejectRide(rideId: string) {
-    this.socket.emit('rejectRide', {
-      driverId: this.driverId,
-      rideId,
-      timestamp: new Date().toISOString()
-    });
+    if (this.isConnected) {
+      this.socket.emit('rejectRide', {
+        driverId: this.driverId,
+        rideId,
+        timestamp: new Date().toISOString()
+      });
+    }
   }
 
   public on(event: string, callback: (data: any) => void) {
     this.socket.on(event, callback);
+  }
+
+  public getConnectionStatus(): boolean {
+    return this.isConnected;
+  }
+
+  public getSocketId(): string | undefined {
+    return this.socket.id;
   }
 }

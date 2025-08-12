@@ -18,7 +18,7 @@ import  { submitVehicleInfo, uploadDocuments } from '../controllers/driver_detai
 import { authenticate } from '../middleware/authMiddle';
 import { limiter } from '../middleware/rateLimiter';
 import { NextFunction, Request, Response } from 'express';
-import { storeDriverRideDetails } from '../controllers/driver_detailes_controller/driverRides_Controller';
+import { storeDriverRideDetails, startRideWithCode } from '../controllers/driver_detailes_controller/driverRides_Controller';
 // import { documentUpload, uploadLimiter } from '../middleware/uploadMiddleware';
 
 
@@ -129,6 +129,7 @@ router.post('/auth/google', (googleAuth as unknown) as RequestHandler);
 
 // Driver rides routes
 router.post('/rides_accepted', authenticate as RequestHandler, storeDriverRideDetails as any);
+router.post('/start_ride', authenticate as RequestHandler, startRideWithCode as any);
 
 // Protected routes
 router.get('/profile', authenticate as RequestHandler, getUserDetails as RequestHandler);

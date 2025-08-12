@@ -104,3 +104,39 @@ export const storeDriverRideDetails = async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Failed to store ride details', details: error instanceof Error ? error.message : error });
   }
 };
+
+// Start ride with OTP (rideCode) validation
+export const startRideWithCode = async (req: Request, res: Response) => {
+  try {
+    const { rideId, rideCode } = req.body;
+    const driverId = req.driver?.id;
+    if (!rideId || !rideCode) {
+      return res.status(400).json({ error: 'rideId and rideCode are required' });
+    }
+    // Find the ride
+    const ride = await prisma.ride.findUnique({ where: { id: rideId } });
+    if (!ride) {
+      return res.status(404).json({ error: 'Ride not found' });
+    }
+    // Check driver is assigned to this ride
+    if (ride.driverId !== driverId) {
+      return res.status(403).json({ error: 'You are not assigned to this ride' });
+    }
+    // Validate rideCode (OTP)
+    if (ride.rideCode !== rideCode) {
+      return res.status(401).json({ error: 'Invalid ride code' });
+    }
+    // Update ride status to in_progress and set startTime
+    const updatedRide = await prisma.ride.update({
+      where: { id: rideId },
+      data: {
+        status: 'in_progress',
+        startTime: new Date(),
+      },
+    });
+    return res.status(200).json({ success: true, message: 'Ride started', ride: updatedRide });
+  } catch (error) {
+    console.error('Error starting ride with code:', error);
+    return res.status(500).json({ error: 'Failed to start ride', details: error instanceof Error ? error.message : error });
+  }
+};
