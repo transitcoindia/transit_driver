@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import e, { NextFunction, Request, Response } from 'express';
 import fs from 'fs';
 import { JwtPayload } from 'jsonwebtoken';

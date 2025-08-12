@@ -9,10 +9,10 @@ export const driverSignupSchema = z.object({
     password: z.string()
         .min(8, "Password must be at least 8 characters"),
     confirmPassword: z.string(),
-    phoneNumber: z.string().refine((phone) => isValidPhoneNumber("+91" + phone), {
+    phoneNumber: z.string().refine((phone: string) => isValidPhoneNumber("+91" + phone), {
         message: "Invalid phone number",
     }),
-}).refine((data) => data.password === data.confirmPassword, {
+}).refine((data: any) => data.password === data.confirmPassword, {
     message: "Passwords do not match",
     path: ["confirmPassword"],
 });
@@ -50,14 +50,14 @@ export const driverDocumentSchema = z.object({
     driverLicenseNumber: z.string(),
     rcNumber: z.string(),
     insuranceNumber: z.string(),
-    expiryDate: z.string().refine((val) => {
+    expiryDate: z.string().refine((val: string) => {
         if (!val) return true;
         const date = new Date(val);
         return !isNaN(date.getTime()) && date > new Date();
     }, {
         message: "Expiry date must be in the future",
     }),
-}).refine((data) => {
+}).refine((data: any) => {
     // When document type is DRIVING_LICENSE, require driver license number
     if (data.documentType === "DRIVING_LICENSE" && !data.driverLicenseNumber) {
         return false;
@@ -83,8 +83,8 @@ export const multipleDocumentDataSchema = z.array(z.object({
     driverLicenseNumber: z.string().optional(),
     rcNumber: z.string().optional(),
     expiryDate: z.string().optional(),
-})).refine(items => {
-    return items.every(item => {
+})).refine((items: any[]) => {
+    return items.every((item: any) => {
         // When document type is DRIVING_LICENSE, require driver license number
         if (item.documentType === "DRIVING_LICENSE" && !item.driverLicenseNumber) {
             return false;
