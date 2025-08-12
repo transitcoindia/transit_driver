@@ -100,18 +100,18 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
                 }
             }
         });
-    } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            if (error.code === 'P2002') {
-                return next(new AppError('Email or phone number already exists', 400));
-            }
+    } catch (error: unknown) {
+        const isUniqueViolation = typeof error === 'object' && error !== null && (error as any).code === 'P2002';
+        if (isUniqueViolation) {
+            return next(new AppError('Email or phone number already exists', 400));
         }
 
         if (error instanceof AppError) {
             return next(error);
         }
 
-        return next(new AppError('An error occurred during registration', 500));
+        const message = error instanceof Error ? error.message : 'An error occurred during registration';
+        return next(new AppError(message, 500));
     }
 };
 

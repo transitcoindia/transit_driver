@@ -126,15 +126,12 @@ export const submitVehicleInfo = async (req: Request, res: Response, next: NextF
                 }
             }
         });
-    } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            console.log(error);
-            if (error.code === 'P2002') {
-                console.log(error);
-                return next(new AppError('Vehicle with this license plate already exists', 400));
-            }
+    } catch (error: unknown) {
+        const isUniqueViolation = typeof error === 'object' && error !== null && (error as any).code === 'P2002';
+        if (isUniqueViolation) {
+            return next(new AppError('Vehicle with this license plate already exists', 400));
         }
-        next(error);
+        next(error as any);
     }
 };
 
@@ -214,7 +211,7 @@ export const uploadDocuments = async (req: Request, res: Response, next: NextFun
 
         // Check for required document types
         const requiredDocTypes = ["DRIVING_LICENSE", "VEHICLE_REGISTRATION", "INSURANCE"];
-        const uploadedDocTypes = documentData.map(doc => doc.documentType);
+        const uploadedDocTypes = documentData.map((doc: any) => doc.documentType);
 
         // Verify all required document types are included
         const missingDocTypes = requiredDocTypes.filter(type => !uploadedDocTypes.includes(type));
@@ -364,7 +361,7 @@ async function checkRequiredDocumentsAndNotify(driverId: string, userEmail: stri
         });
 
         const requiredDocTypes = ["DRIVING_LICENSE", "VEHICLE_REGISTRATION", "INSURANCE"];
-        const uploadedDocTypes = allDocuments.map(doc => doc.documentType);
+        const uploadedDocTypes = allDocuments.map((doc: any) => doc.documentType);
 
         // Get driver to check if government IDs are provided
         const driver = await prisma.driver.findUnique({
@@ -403,7 +400,7 @@ async function checkRequiredDocumentsAndNotify(driverId: string, userEmail: stri
                     documentUrl: true,
                     documentNumber: true,
                 }
-            }).then(docs => docs.map(doc => ({
+            }).then((docs: any[]) => docs.map((doc: any) => ({
                 documentType: doc.documentType,
                 documentUrl: doc.documentUrl,
                 documentNumber: doc.documentNumber || undefined
