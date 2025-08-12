@@ -171,7 +171,7 @@ export const sendContact_adver_Email = async (formData: Contact_adver_Data) => {
           </div>
         </div>
       `,
-      replyTo: formData.email,
+      reply_to: formData.email,
     });
 
     return { success: true };
@@ -454,7 +454,7 @@ export const sendGoaMilesRideEmail = async (rideData: GoaMilesRideData) => {
         </div>
       </div>
       `,
-      replyTo: userEmail,
+      reply_to: userEmail,
     });
 
     return { success: true, bookingRef };
@@ -477,7 +477,7 @@ export const sendShankhContactEmails = async (formData: ShankhContactFormData) =
 
   try {
     // Email to company
-    const companyEmailResponse = await resend.emails.send({
+    const companyEmailResponse: any = await resend.emails.send({
       from: 'Shankh Technologies <noreply@shankhtech.com>',
       to: ['info@shankhtech.com'],
       subject: `New Contact Form Submission from ${name}${domain ? ` - ${domain}` : ''}`,
@@ -526,7 +526,7 @@ export const sendShankhContactEmails = async (formData: ShankhContactFormData) =
     });
 
     // Confirmation email to user
-    const userEmailResponse = await resend.emails.send({
+    const userEmailResponse: any = await resend.emails.send({
       from: 'Shankh Technologies <noreply@shankhtech.com>',
       to: [email],
       subject: 'Thank you for contacting ShankhTech - We\'ll be in touch soon!',
@@ -600,7 +600,7 @@ export const sendShankhContactEmailsWithTextFallback = async (formData: ShankhCo
 
   try {
     // Email to company with text fallback
-    const companyEmailResponse = await resend.emails.send({
+    const companyEmailResponse: any = await resend.emails.send({
       from: 'Transit <noreply@transitco.in>',
       to: ['info@shankhtech.com'],
       subject: `New Contact Form Submission from ${name}${domain ? ` - ${domain}` : ''}`,
@@ -628,7 +628,7 @@ export const sendShankhContactEmailsWithTextFallback = async (formData: ShankhCo
     });
 
     // Confirmation email to user with text fallback
-    const userEmailResponse = await resend.emails.send({
+    const userEmailResponse: any = await resend.emails.send({
       from: 'Transit <noreply@transitco.in>',
       to: [email],
       subject: 'Thank you for contacting ShankhTech - We\'ll be in touch soon!',
