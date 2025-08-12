@@ -1,7 +1,7 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { RequestHandler } from 'express';
+import { RequestHandler, Request } from 'express';
 import { rateLimit } from 'express-rate-limit';
 
 // Create upload directories
@@ -18,10 +18,10 @@ if (!fs.existsSync(tempUploadsDir)) {
 
 // Configure multer for temporary local storage before S3 upload
 const storage = multer.diskStorage({
-    destination: (req: Express.Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
+    destination: (req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
         cb(null, tempUploadsDir);
     },
-    filename: (req: Express.Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
+    filename: (req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
         const ext = path.extname(file.originalname);
         cb(null, file.fieldname + '-' + uniqueSuffix + ext);
@@ -35,7 +35,7 @@ export const documentUpload = multer({
         fileSize: 10 * 1024 * 1024, // 10MB file size limit
         files: 5 // Maximum 5 files
     },
-    fileFilter: (req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+    fileFilter: (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
         // Allow only images and PDFs
         const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
         if (allowedMimeTypes.includes(file.mimetype)) {

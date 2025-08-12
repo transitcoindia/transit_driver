@@ -35,7 +35,7 @@ if (!fs.existsSync(tempUploadsDir)) {
 
 // Configure multer for temporary local storage before S3 upload
 const storage = multer.diskStorage({
-    destination: (req: Express.Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
+    destination: (req: Request, file: any, cb: (error: Error | null, filename: string) => void) => {
         console.log('Multer destination called for file:', {
             originalname: file.originalname,
             fieldname: file.fieldname,
@@ -50,7 +50,7 @@ const storage = multer.diskStorage({
         }
         cb(null, tempUploadsDir);
     },
-    filename: (req: Express.Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
+    filename: (req: Request, file: any, cb: (error: Error | null, filename: string) => void) => {
         console.log('Multer filename called for file:', {
             originalname: file.originalname,
             fieldname: file.fieldname,
@@ -69,7 +69,7 @@ const documentUpload = multer({
         fileSize: 10 * 1024 * 1024, // 10MB file size limit
         files: 5 // Maximum 5 files
     },
-    fileFilter: (req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+    fileFilter: (req: Request, file: any, cb: multer.FileFilterCallback) => {
         console.log('Multer fileFilter called for file:', {
             originalname: file.originalname,
             fieldname: file.fieldname,

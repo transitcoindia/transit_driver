@@ -20,7 +20,7 @@ const s3Client = new S3Client({
 });
 
 export const uploadToS3 = async (
-    file: Express.Multer.File,
+    file: any,
     folder: string = 'driver-documents'
 ): Promise<string> => {
     try {

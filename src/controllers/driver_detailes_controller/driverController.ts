@@ -172,7 +172,7 @@ export const uploadDocuments = async (req: Request, res: Response, next: NextFun
             return next(new AppError('No documents uploaded. Please upload all required documents.', 400));
         }
 
-        const documentFiles = req.files['documents'] as Express.Multer.File[];
+        const documentFiles = req.files['documents'] as any[];
         console.log('Document files details:', documentFiles.map(f => ({
             originalname: f.originalname,
             path: f.path,

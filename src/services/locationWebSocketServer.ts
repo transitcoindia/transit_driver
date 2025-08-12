@@ -6,8 +6,8 @@ import { getS2CellId } from '../s2';
 export function initLocationWebSocketServer(httpServer: HTTPServer) {
   const wss = new WebSocketServer({ server: httpServer });
 
-  wss.on('connection', (ws) => {
-    ws.on('message', async (message) => {
+  wss.on('connection', (ws: any) => {
+    ws.on('message', async (message: any) => {
       try {
         const data = JSON.parse(message.toString());
         if (data.type === 'locationUpdate' && data.driverId && data.latitude && data.longitude) {
