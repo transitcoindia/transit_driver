@@ -220,7 +220,22 @@ let driverWebSocketClient: DriverWebSocketClient | null = null;
 
 export const loginWithEmail = async (req: Request, res: Response, next: NextFunction) => {
     try {
+        console.log(' Login request body:', req.body);
+        console.log(' Login request headers:', req.headers);
+        
         const { email, password } = req.body;
+
+        // Validate required fields
+        if (!email || !password) {
+            console.error(' Missing required fields:', { email: !!email, password: !!password });
+            return res.status(400).json({
+                success: false,
+                message: 'Email and password are required',
+                received: { email: !!email, password: !!password }
+            });
+        }
+
+        console.log(' Searching for driver with email:', email);
 
         // Find driver by email
         const driver = await prisma.driver.findUnique({
@@ -232,11 +247,14 @@ export const loginWithEmail = async (req: Request, res: Response, next: NextFunc
         });
 
         if (!driver) {
+            console.log('❌ Driver not found for email:', email);
             return res.status(401).json({
                 success: false,
                 message: 'Invalid email or password'
             });
         }
+
+        console.log('✅ Driver found:', { id: driver.id, name: driver.name });
 
         if(driver.emailVerified === false) {
             return res.status(401).json({
@@ -248,18 +266,25 @@ export const loginWithEmail = async (req: Request, res: Response, next: NextFunc
         // Verify password
         const isValidPassword = await bcrypt.compare(password, driver.password);
         if (!isValidPassword) {
+            console.log('❌ Invalid password for driver:', driver.id);
             return next(new AppError('Invalid email or password', 401));
         }
 
+        console.log('✅ Password verified for driver:', driver.id);
+
         // Generate access token
         const accessToken = generateAccessToken(driver.id);
+        
         // If already connected, disconnect previous client
         if (driverWebSocketClient) {
           driverWebSocketClient.disconnect();
         }
+        
         // Create new WebSocket client with dynamic driver ID and accessToken
         driverWebSocketClient = new DriverWebSocketClient(driver.id, accessToken);
         await driverWebSocketClient.connect();
+
+        console.log('✅ Driver logged in successfully:', driver.id);
 
         return res.status(200).json({
             success: true,
@@ -279,7 +304,7 @@ export const loginWithEmail = async (req: Request, res: Response, next: NextFunc
             }
         });
     } catch (error) {
-      console.log(error)
+      console.error('❌ Login error:', error);
         return next(new AppError('An error occurred during login', 500));
     }
 };

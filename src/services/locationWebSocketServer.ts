@@ -13,11 +13,34 @@ export function initLocationWebSocketServer(httpServer: HTTPServer) {
         if (data.type === 'locationUpdate' && data.driverId && data.latitude && data.longitude) {
           const { driverId, latitude, longitude } = data;
           const cellId = getS2CellId(latitude, longitude, 15);
-          await redis.set(`driver:location:${driverId}`, JSON.stringify({ latitude, longitude, timestamp: Date.now() }));
+
+          // Resolve rideId: from payload or from Redis mapping
+          let rideId: string | null = data.rideId || null;
+          if (!rideId) {
+            rideId = await redis.get(`driver:active_ride:${driverId}`);
+          }
+
+          const payload = {
+            rideId: rideId || undefined,
+            driverId,
+            latitude,
+            longitude,
+            cellId,
+            timestamp: Date.now()
+          };
+
+          // Persist per-driver last location (short TTL) and cell membership
+          await redis.set(`driver:location:${driverId}`, JSON.stringify(payload), 'EX', 300);
           await redis.sadd(`geo:cell:${cellId}`, driverId);
-          await redis.publish('driver_location_updates', JSON.stringify({
-            driverId, latitude, longitude, cellId, timestamp: Date.now()
-          }));
+
+          // If we know the ride, persist per-ride last location as well
+          if (rideId) {
+            await redis.set(`ride:lastLocation:${rideId}`, JSON.stringify(payload), 'EX', 7200);
+          }
+
+          // Publish to subscribers (API Gateway)
+          await redis.publish('driver_location_updates', JSON.stringify(payload));
+
           ws.send(JSON.stringify({ type: 'locationAck', status: 'ok' }));
         }
       } catch (err) {

@@ -1,15 +1,15 @@
 const WebSocket = require('ws');
 
-const ws = new WebSocket('http://localhost:3000');
+const ws = new WebSocket('https://transit-driver.onrender.com');
 
 ws.on('open', function open() {
   // Send a location update every 5 seconds
   setInterval(() => {
-    const latitude = 15.2993 + Math.random() * 0.01;
-    const longitude = 74.124 + Math.random() * 0.01;
+    const latitude = 77.62084;
+    const longitude = 13.12286;
     ws.send(JSON.stringify({
       type: 'locationUpdate',
-      driverId: 'test-driver-999',
+      driverId: 'test-driver-nitesh',
       latitude,
       longitude
     }));
