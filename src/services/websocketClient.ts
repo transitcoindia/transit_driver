@@ -14,13 +14,21 @@ export class DriverWebSocketClient {
     this.accessToken = accessToken;
     
     // Connect to API Gateway WebSocket server
-    this.socket = io(process.env.API_GATEWAY_WS_URL || 'http://localhost:3005', {
-      transports: ['websocket', 'polling'],
+    const gatewayUrl = process.env.API_GATEWAY_WS_URL || process.env.API_GATEWAY_URL || 'http://localhost:3005';
+    this.socket = io(gatewayUrl, {
+      // Prefer pure websocket in production to avoid polling/upgrade churn that can trigger 429s on hosts
+      transports: process.env.NODE_ENV === 'production' ? ['websocket'] : ['websocket', 'polling'],
+      path: '/socket.io/',
       timeout: 45000,
       reconnection: true,
       reconnectionAttempts: this.maxReconnectAttempts,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 15000,
+      randomizationFactor: 0.5,
+      // Set explicit Origin for hosts that enforce WS origin checks
+      extraHeaders: {
+        Origin: process.env.API_GATEWAY_PUBLIC_ORIGIN || 'https://api-gateway-transit.onrender.com'
+      },
       auth: { 
         driverId: this.driverId, 
         accessToken: this.accessToken 
@@ -57,6 +65,17 @@ export class DriverWebSocketClient {
     this.socket.on('connect_error', (error) => {
       console.error('❌ Connection error:', error);
       this.reconnectAttempts++;
+      // If the platform responds with 429, back off longer to respect rate limits
+      const message = (error && (error as any).message) || '';
+      if (typeof message === 'string' && message.includes('429')) {
+        const backoffMs = 30000; // 30s cool-down on 429
+        console.warn(`⚠️  Received 429. Backing off for ${backoffMs / 1000}s before next attempt.`);
+        setTimeout(() => {
+          if (!this.socket.connected) {
+            this.socket.connect();
+          }
+        }, backoffMs);
+      }
     });
 
     this.socket.on('reconnect', (attemptNumber) => {
