@@ -16,8 +16,9 @@ export class DriverWebSocketClient {
     // Connect to API Gateway WebSocket server
     const gatewayUrl = process.env.API_GATEWAY_WS_URL || process.env.API_GATEWAY_URL || 'http://localhost:3005';
     this.socket = io(gatewayUrl, {
-      // Prefer pure websocket in production to avoid polling/upgrade churn that can trigger 429s on hosts
-      transports: process.env.NODE_ENV === 'production' ? ['websocket'] : ['websocket', 'polling'],
+      // In production, prefer HTTP polling to avoid provider WS rate limits (429)
+      transports: process.env.NODE_ENV === 'production' ? ['polling'] : ['websocket', 'polling'],
+      autoConnect: false,
       path: '/socket.io/',
       timeout: 45000,
       reconnection: true,
@@ -36,11 +37,13 @@ export class DriverWebSocketClient {
     });
     
     this.setupEventListeners();
+    // Delay initial connect slightly to avoid burst connects during login
+    setTimeout(() => this.socket.connect(), 500);
   }
 
   private setupEventListeners() {
     this.socket.on('connect', () => {
-      console.log('🔌 Connected to API Gateway WebSocket server');
+      console.log(' Connected to API Gateway WebSocket server');
       this.isConnected = true;
       this.reconnectAttempts = 0;
       
@@ -49,11 +52,11 @@ export class DriverWebSocketClient {
     });
 
     this.socket.on('authenticated', (response) => {
-      console.log('✅ Driver authenticated:', response);
+      console.log(' Driver authenticated:', response);
     });
 
     this.socket.on('disconnect', (reason) => {
-      console.log('🔌 Disconnected from API Gateway WebSocket server:', reason);
+      console.log(' Disconnected from API Gateway WebSocket server:', reason);
       this.isConnected = false;
       
       if (reason === 'io server disconnect') {
@@ -63,13 +66,13 @@ export class DriverWebSocketClient {
     });
 
     this.socket.on('connect_error', (error) => {
-      console.error('❌ Connection error:', error);
+      console.error(' Connection error:', error);
       this.reconnectAttempts++;
       // If the platform responds with 429, back off longer to respect rate limits
       const message = (error && (error as any).message) || '';
       if (typeof message === 'string' && message.includes('429')) {
         const backoffMs = 30000; // 30s cool-down on 429
-        console.warn(`⚠️  Received 429. Backing off for ${backoffMs / 1000}s before next attempt.`);
+        console.warn(` Received 429. Backing off for ${backoffMs / 1000}s before next attempt.`);
         setTimeout(() => {
           if (!this.socket.connected) {
             this.socket.connect();
@@ -79,16 +82,16 @@ export class DriverWebSocketClient {
     });
 
     this.socket.on('reconnect', (attemptNumber) => {
-      console.log('🔄 Reconnected after', attemptNumber, 'attempts');
+      console.log(' Reconnected after', attemptNumber, 'attempts');
       this.authenticate();
     });
 
     this.socket.on('reconnect_error', (error) => {
-      console.error('❌ Reconnection error:', error);
+      console.error(' Reconnection error:', error);
     });
 
     this.socket.on('reconnect_failed', () => {
-      console.error('❌ Reconnection failed after', this.maxReconnectAttempts, 'attempts');
+      console.error(' Reconnection failed after', this.maxReconnectAttempts, 'attempts');
     });
 
     this.socket.on('error', (error) => {
@@ -102,20 +105,20 @@ export class DriverWebSocketClient {
 
     // Handle server ping to keep connection alive
     this.socket.on('serverPing', (data) => {
-      console.log('🔄 Server ping received:', data);
+      console.log(' Server ping received:', data);
       // Respond with pong
       this.socket.emit('pong', { timestamp: Date.now() });
     });
 
     // Handle connection info
     this.socket.on('connectionInfo', (data) => {
-      console.log('📊 Connection info:', data);
+      console.log(' Connection info:', data);
     });
   }
 
   private authenticate() {
     if (this.socket && this.isConnected) {
-      console.log('🔐 Authenticating driver...');
+      console.log(' Authenticating driver...');
       this.socket.emit('authenticate', { 
         driverId: this.driverId, 
         accessToken: this.accessToken 
