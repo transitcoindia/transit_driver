@@ -16,9 +16,10 @@ import {
 } from '../controllers/auth_controllers/authControllers';
 import  { submitVehicleInfo, uploadDocuments } from '../controllers/driver_detailes_controller/driverController'
 import { authenticate } from '../middleware/authMiddle';
+import { s2LocationIngest, s2LocationIngestPublic } from './locationIngest';
 import { limiter } from '../middleware/rateLimiter';
 import { NextFunction, Request, Response } from 'express';
-import { storeDriverRideDetails, startRideWithCode } from '../controllers/driver_detailes_controller/driverRides_Controller';
+import { storeDriverRideDetails, startRideWithCode, endRide } from '../controllers/driver_detailes_controller/driverRides_Controller';
 // import { documentUpload, uploadLimiter } from '../middleware/uploadMiddleware';
 
 
@@ -130,6 +131,7 @@ router.post('/auth/google', (googleAuth as unknown) as RequestHandler);
 // Driver rides routes
 router.post('/rides_accepted', authenticate as RequestHandler, storeDriverRideDetails as any);
 router.post('/start_ride', authenticate as RequestHandler, startRideWithCode as any);
+router.post('/end_ride', authenticate as RequestHandler, endRide as any);
 
 // Protected routes
 router.get('/profile', authenticate as RequestHandler, getUserDetails as RequestHandler);

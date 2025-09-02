@@ -5,7 +5,9 @@ import { PrismaClient } from '@prisma/client';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import dotenv from 'dotenv';
+import { getAllowedOrigins, PORT as DRIVER_PORT, SOCKET_IO_PATH } from './config/env';
 import  driverRoutes  from './routes/driverRoutes'
+import { s2LocationIngest, s2LocationIngestPublic } from './routes/locationIngest';
 import { initLocationWebSocketServer } from './services/locationWebSocketServer';
 // import { DriverWebSocketClient } from './services/websocketClient';
 // import { initializeSocketServer } from './socket/socketServer';
@@ -20,13 +22,7 @@ const httpServer = createServer(app);
 // Initialize Socket.IO server for production-ready WebSocket support
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: [
-      process.env.API_GATEWAY_URL || 'http://localhost:3005',
-      process.env.RIDER_BACKEND_URL || 'http://localhost:8000',
-      process.env.FRONTEND_APP_URL || 'http://localhost:3000',
-      'https://www.shankhtech.com',
-      'https://pramaan.ondc.org',
-    ],
+    origin: getAllowedOrigins(),
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true
   },
@@ -36,6 +32,7 @@ const io = new SocketIOServer(httpServer, {
   allowEIO3: true, // Allow Engine.IO v3 clients
   maxHttpBufferSize: 1e8, // 100 MB
   connectTimeout: 45000, // 45 seconds
+  path: SOCKET_IO_PATH,
 });
   
 // Initialize Prisma
@@ -51,13 +48,7 @@ const prisma = new PrismaClient();
 
 // Middleware
 app.use(cors({
-  origin: [
-    process.env.API_GATEWAY_URL || 'http://localhost:3005',
-    process.env.RIDER_BACKEND_URL || 'http://localhost:8000',
-    process.env.FRONTEND_APP_URL || 'http://localhost:3000',
-    'https://www.shankhtech.com',
-    'https://pramaan.ondc.org',
-  ],
+  origin: getAllowedOrigins(),
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true,
 }));
@@ -66,6 +57,10 @@ app.use(express.json());
 
 // Routes
 app.use('/api/driver', driverRoutes);
+// Authenticated ingest (mount behind authenticate in driverRoutes if needed)
+app.use('/api/driver/s2', s2LocationIngest);
+// Public testing ingest (no auth)
+app.use('/api/driver/testing', s2LocationIngestPublic);
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
@@ -136,10 +131,10 @@ io.on('connection', (socket) => {
 initLocationWebSocketServer(httpServer);
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = DRIVER_PORT;
 httpServer.listen(PORT, () => {
   console.log(`🚀 Driver backend server running on port http://localhost:${PORT}`);
-  console.log(`🔌 WebSocket server is ready on ws://localhost:${PORT}`);
+  console.log(`🔌 WebSocket server is ready on ws://localhost:${PORT}${SOCKET_IO_PATH}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
 });

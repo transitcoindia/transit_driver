@@ -16,16 +16,19 @@ export class DriverWebSocketClient {
     // Connect to API Gateway WebSocket server
     const gatewayUrl = process.env.API_GATEWAY_WS_URL || process.env.API_GATEWAY_URL || 'http://localhost:3005';
     this.socket = io(gatewayUrl, {
-      // In production, prefer HTTP polling to avoid provider WS rate limits (429)
-      transports: process.env.NODE_ENV === 'production' ? ['polling'] : ['websocket', 'polling'],
+      // In production, force pure WebSocket to avoid Cloudflare/host 429 on polling
+      transports: process.env.NODE_ENV === 'production' ? ['websocket'] : ['websocket', 'polling'],
+      upgrade: false,
+      forceNew: true,
+      withCredentials: true,
       autoConnect: false,
       path: '/socket.io/',
       timeout: 45000,
       reconnection: true,
       reconnectionAttempts: this.maxReconnectAttempts,
-      reconnectionDelay: 2000,
-      reconnectionDelayMax: 15000,
-      randomizationFactor: 0.5,
+      reconnectionDelay: 4000,
+      reconnectionDelayMax: 20000,
+      randomizationFactor: 0.6,
       // Set explicit Origin for hosts that enforce WS origin checks
       extraHeaders: {
         Origin: process.env.API_GATEWAY_PUBLIC_ORIGIN || 'https://api-gateway-transit.onrender.com'

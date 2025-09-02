@@ -2,6 +2,7 @@ import { Server as WebSocketServer } from 'ws';
 import { Server as HTTPServer } from 'http';
 import redis from '../redis';
 import { getS2CellId } from '../s2';
+import { CHANNELS, DRIVER_LOCATION_TTL_SECONDS, RIDE_LAST_LOCATION_TTL_SECONDS } from '../config/env';
 
 export function initLocationWebSocketServer(httpServer: HTTPServer) {
   const wss = new WebSocketServer({ server: httpServer });
@@ -30,16 +31,16 @@ export function initLocationWebSocketServer(httpServer: HTTPServer) {
           };
 
           // Persist per-driver last location (short TTL) and cell membership
-          await redis.set(`driver:location:${driverId}`, JSON.stringify(payload), 'EX', 300);
+          await redis.set(`driver:location:${driverId}`, JSON.stringify(payload), 'EX', DRIVER_LOCATION_TTL_SECONDS);
           await redis.sadd(`geo:cell:${cellId}`, driverId);
 
           // If we know the ride, persist per-ride last location as well
           if (rideId) {
-            await redis.set(`ride:lastLocation:${rideId}`, JSON.stringify(payload), 'EX', 7200);
+            await redis.set(`ride:lastLocation:${rideId}`, JSON.stringify(payload), 'EX', RIDE_LAST_LOCATION_TTL_SECONDS);
           }
 
           // Publish to subscribers (API Gateway)
-          await redis.publish('driver_location_updates', JSON.stringify(payload));
+          await redis.publish(CHANNELS.DRIVER_LOCATION_UPDATES, JSON.stringify(payload));
 
           ws.send(JSON.stringify({ type: 'locationAck', status: 'ok' }));
         }

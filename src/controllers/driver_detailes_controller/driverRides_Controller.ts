@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../prismaClient';
+import redis from '../../redis';
 
 export const storeDriverRideDetails = async (req: Request, res: Response) => {
   try {
@@ -138,5 +139,68 @@ export const startRideWithCode = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error starting ride with code:', error);
     return res.status(500).json({ error: 'Failed to start ride', details: error instanceof Error ? error.message : error });
+  }
+};
+
+// End ride and persist final stats
+export const endRide = async (req: Request, res: Response) => {
+  try {
+    const { rideId, actualFare, actualDistance, actualDuration } = req.body || {};
+    const driverId = req.driver?.id;
+    if (!rideId) {
+      return res.status(400).json({ error: 'rideId is required' });
+    }
+
+    const ride = await prisma.ride.findUnique({ where: { id: rideId } });
+    if (!ride) {
+      return res.status(404).json({ error: 'Ride not found' });
+    }
+    if (driverId && ride.driverId !== driverId) {
+      return res.status(403).json({ error: 'You are not assigned to this ride' });
+    }
+
+    const updatedRide = await prisma.ride.update({
+      where: { id: rideId },
+      data: {
+        status: 'completed',
+        endTime: new Date(),
+        actualFare: typeof actualFare === 'number' ? actualFare : ride.actualFare,
+        actualDistance: typeof actualDistance === 'number' ? actualDistance : ride.actualDistance,
+        actualDuration: typeof actualDuration === 'number' ? actualDuration : ride.actualDuration,
+      }
+    });
+
+    // Clear active ride mapping for the driver
+    try {
+      const effectiveDriverId = driverId || ride.driverId;
+      if (effectiveDriverId) {
+        await redis.del(`driver:active_ride:${effectiveDriverId}`);
+      }
+    } catch (e) {
+      console.error('Failed to clear active ride mapping:', e);
+    }
+
+    // Publish ride status update so API Gateway can notify rider clients
+    try {
+      await redis.publish('ride_status_updates', JSON.stringify({
+        type: 'rideEnded',
+        status: 'completed',
+        rideId,
+        driverId: driverId || ride.driverId,
+        riderId: ride.riderId,
+        endTime: updatedRide.endTime,
+        actualFare: updatedRide.actualFare,
+        actualDistance: updatedRide.actualDistance,
+        actualDuration: updatedRide.actualDuration,
+        timestamp: Date.now()
+      }));
+    } catch (e) {
+      console.error('Failed to publish ride status update:', e);
+    }
+
+    return res.status(200).json({ success: true, message: 'Ride ended', ride: updatedRide });
+  } catch (error) {
+    console.error('Error ending ride:', error);
+    return res.status(500).json({ error: 'Failed to end ride', details: error instanceof Error ? error.message : error });
   }
 };
