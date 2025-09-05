@@ -8,6 +8,8 @@ export class DriverWebSocketClient {
   private isConnected: boolean = false;
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
+  private connectionQueue: boolean = false;
+  private static globalConnectionDelay: number = 0;
 
   constructor(driverId: string, accessToken: string) {
     this.driverId = driverId;
@@ -23,15 +25,16 @@ export class DriverWebSocketClient {
       withCredentials: true,
       autoConnect: false,
       path: '/socket.io/',
-      timeout: 45000,
+      timeout: 60000, // Increased timeout
       reconnection: true,
       reconnectionAttempts: this.maxReconnectAttempts,
-      reconnectionDelay: 4000,
-      reconnectionDelayMax: 20000,
-      randomizationFactor: 0.6,
+      reconnectionDelay: 8000, // Increased initial delay
+      reconnectionDelayMax: 30000, // Increased max delay
+      randomizationFactor: 0.8, // More randomization
       // Set explicit Origin for hosts that enforce WS origin checks
       extraHeaders: {
-        Origin: process.env.API_GATEWAY_PUBLIC_ORIGIN || 'https://api-gateway-transit.onrender.com'
+        Origin: process.env.API_GATEWAY_PUBLIC_ORIGIN || 'https://api-gateway-transit.onrender.com',
+        'User-Agent': 'DriverApp/1.0.0'
       },
       auth: { 
         driverId: this.driverId, 
@@ -40,8 +43,8 @@ export class DriverWebSocketClient {
     });
     
     this.setupEventListeners();
-    // Delay initial connect slightly to avoid burst connects during login
-    setTimeout(() => this.socket.connect(), 500);
+    // Add staggered delay to prevent burst connections
+    this.scheduleConnection();
   }
 
   private setupEventListeners() {
@@ -71,13 +74,24 @@ export class DriverWebSocketClient {
     this.socket.on('connect_error', (error) => {
       console.error(' Connection error:', error);
       this.reconnectAttempts++;
-      // If the platform responds with 429, back off longer to respect rate limits
+      
+      // If the platform responds with 429, back off much longer to respect rate limits
       const message = (error && (error as any).message) || '';
-      if (typeof message === 'string' && message.includes('429')) {
-        const backoffMs = 30000; // 30s cool-down on 429
+      const description = (error && (error as any).description) || '';
+      
+      if (
+        (typeof message === 'string' && message.includes('429')) ||
+        (typeof description === 'string' && description.includes('429')) ||
+        (error && (error as any).type === 'TransportError' && description.includes('429'))
+      ) {
+        const backoffMs = 60000 + (this.reconnectAttempts * 30000); // 60s + 30s per attempt
         console.warn(` Received 429. Backing off for ${backoffMs / 1000}s before next attempt.`);
+        
+        // Disconnect and wait before reconnecting
+        this.socket.disconnect();
         setTimeout(() => {
           if (!this.socket.connected) {
+            console.log(` Attempting reconnection after ${backoffMs / 1000}s backoff...`);
             this.socket.connect();
           }
         }, backoffMs);
@@ -204,5 +218,26 @@ export class DriverWebSocketClient {
 
   public getSocketId(): string | undefined {
     return this.socket.id;
+  }
+
+  private scheduleConnection() {
+    if (this.connectionQueue) {
+      return; // Already queued
+    }
+    
+    this.connectionQueue = true;
+    
+    // Add global delay to prevent simultaneous connections
+    DriverWebSocketClient.globalConnectionDelay += 2000; // 2 seconds between connections
+    const delay = DriverWebSocketClient.globalConnectionDelay + Math.random() * 3000;
+    
+    console.log(` Scheduling connection in ${delay / 1000}s to avoid burst...`);
+    
+    setTimeout(() => {
+      this.connectionQueue = false;
+      if (!this.socket.connected) {
+        this.socket.connect();
+      }
+    }, delay);
   }
 }
