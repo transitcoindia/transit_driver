@@ -1,78 +1,110 @@
+
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-// import morgan from 'morgan';
 import { PrismaClient } from '@prisma/client';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import dotenv from 'dotenv';
 import { getAllowedOrigins, PORT as DRIVER_PORT, SOCKET_IO_PATH } from './config/env';
-import  driverRoutes  from './routes/driverRoutes'
+import driverRoutes from './routes/driverRoutes';
 import { s2LocationIngest, s2LocationIngestPublic } from './routes/locationIngest';
 import { initLocationWebSocketServer } from './services/locationWebSocketServer';
-// import { DriverWebSocketClient } from './services/websocketClient';
-// import { initializeSocketServer } from './socket/socketServer';
+import { setupSwagger } from "./swagger"; // ✅ added
 
-// Load environment variables
 dotenv.config();
 
-// Initialize Express app
 const app: Express = express();
 const httpServer = createServer(app);
-
-// Initialize Socket.IO server for production-ready WebSocket support
 const io = new SocketIOServer(httpServer, {
   cors: {
     origin: getAllowedOrigins(),
     methods: ["GET", "POST", "PUT", "DELETE"],
-    credentials: true
+    credentials: true,
   },
-  pingTimeout: 60000, // 60 seconds
-  pingInterval: 25000, // 25 seconds
-  transports: ['websocket', 'polling'], // Enable both WebSocket and polling
-  allowEIO3: true, // Allow Engine.IO v3 clients
-  maxHttpBufferSize: 1e8, // 100 MB
-  connectTimeout: 45000, // 45 seconds
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  transports: ['websocket', 'polling'],
+  allowEIO3: true,
+  maxHttpBufferSize: 1e8,
+  connectTimeout: 45000,
   path: SOCKET_IO_PATH,
 });
-  
-// Initialize Prisma
+
 const prisma = new PrismaClient();
 
-// Initialize WebSocket client
-// const driverWebSocketClient = new DriverWebSocketClient(process.env.DRIVER_ID || 'default_driver_id');
-
-// Connect to WebSocket server
-// driverWebSocketClient.connect().catch(error => {
-//   console.error('Failed to connect to WebSocket server:', error);
-// });
-
-// Middleware
 app.use(cors({
-  origin: getAllowedOrigins(),
-  methods: ["GET", "POST", "PUT", "DELETE"],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, Postman, curl)
+    if (!origin) return callback(null, true);
+    
+    // In development, allow all localhost origins automatically
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      console.log(`✅ CORS allowed for localhost: ${origin}`);
+      return callback(null, true);
+    }
+    
+    const allowedOrigins = getAllowedOrigins();
+    if (allowedOrigins.includes(origin)) {
+      console.log(`✅ CORS allowed for origin: ${origin}`);
+      callback(null, true);
+    } else {
+      console.log(`⚠️ CORS origin not in whitelist: ${origin} (allowing anyway in dev)`);
+      callback(null, true); // Allow all in development
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With", "Cookie"],
+  exposedHeaders: ["Set-Cookie"],
   credentials: true,
+  optionsSuccessStatus: 200
 }));
+
+// Additional CORS headers for better compatibility
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header("Access-Control-Allow-Origin", origin);
+  } else {
+    res.header("Access-Control-Allow-Origin", "*");
+  }
+  
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization, Cookie"
+  );
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Max-Age", "86400");
+  
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+  
+  next();
+});
+
 app.use(express.json());
-//app.use(morgan('dev'));
+
+// ✅ Initialize Swagger documentation
+setupSwagger(app);
 
 // Routes
 app.use('/api/driver', driverRoutes);
-// Authenticated ingest (mount behind authenticate in driverRoutes if needed)
 app.use('/api/driver/s2', s2LocationIngest);
-// Public testing ingest (no auth)
 app.use('/api/driver/testing', s2LocationIngestPublic);
 
-// Health check endpoint
+// Health check
 app.get('/health', (req: Request, res: Response) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
     websocket: 'enabled',
     environment: process.env.NODE_ENV || 'development'
   });
 });
 
-// Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error(err.stack);
   res.status(500).json({ error: 'Something went wrong!' });
@@ -82,78 +114,48 @@ app.get('/', (req: Request, res: Response) => {
   res.send('Driver Backend Service');
 });
 
-// WebSocket connection handling
+// WebSocket connections
 io.on('connection', (socket) => {
   console.log(`🔌 Driver client connected: ${socket.id}`);
-  
-  // Handle driver authentication
+
   socket.on('authenticate', (data) => {
-    try {
-      console.log(`🔐 Driver authentication attempt from ${socket.id}:`, data);
-      socket.emit('authenticated', { status: 'success', type: 'driver' });
-    } catch (error) {
-      console.error('Driver authentication error:', error);
-      socket.emit('error', { message: 'Authentication failed' });
-    }
+    console.log(`🔐 Authentication attempt:`, data);
+    socket.emit('authenticated', { status: 'success', type: 'driver' });
   });
 
-  // Handle location updates
   socket.on('locationUpdate', (data) => {
-    console.log(`📍 Location update from ${socket.id}:`, data);
-    // Broadcast location update to all connected clients
+    console.log(`📍 Location update:`, data);
     socket.broadcast.emit('driverLocationUpdate', data);
     socket.emit('locationAck', { status: 'ok' });
   });
 
-  // Handle ride acceptance
   socket.on('acceptRide', (data) => {
-    console.log(`✅ Ride acceptance from ${socket.id}:`, data);
+    console.log(`✅ Ride accepted:`, data);
     socket.emit('rideAccepted', { status: 'accepted', message: 'Ride accepted successfully' });
   });
 
-  // Handle disconnection
   socket.on('disconnect', (reason) => {
-    console.log(`🔌 Driver client disconnected: ${socket.id}, reason: ${reason}`);
+    console.log(`🔌 Disconnected: ${socket.id}, reason: ${reason}`);
   });
 
-  // Handle errors
   socket.on('error', (error) => {
-    console.error(`❌ Driver socket error for ${socket.id}:`, error);
+    console.error(`❌ Socket error:`, error);
   });
 
-  // Heartbeat/ping to keep connection alive
   socket.on('ping', () => {
     socket.emit('pong', { timestamp: Date.now() });
   });
 });
 
-// Start WebSocket server on the same HTTP server
 initLocationWebSocketServer(httpServer);
 
-// Start server
 const PORT = DRIVER_PORT;
 httpServer.listen(PORT, () => {
-  console.log(`🚀 Driver backend server running on port http://localhost:${PORT}`);
-  console.log(`🔌 WebSocket server is ready on ws://localhost:${PORT}${SOCKET_IO_PATH}`);
+  console.log(`🚀 Driver backend server running on http://localhost:${PORT}`);
+  console.log(`🔌 WebSocket server: ws://localhost:${PORT}${SOCKET_IO_PATH}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-});
-
-// Graceful shutdown handling
-process.on('SIGTERM', () => {
-  console.log('🛑 SIGTERM received, shutting down gracefully...');
-  httpServer.close(() => {
-    console.log('✅ HTTP server closed');
-    process.exit(0);
-  });
-});
-
-process.on('SIGINT', () => {
-  console.log('🛑 SIGINT received, shutting down gracefully...');
-  httpServer.close(() => {
-    console.log('✅ HTTP server closed');
-    process.exit(0);
-  });
+  console.log(`📘 Swagger docs: http://localhost:${PORT}/api-docs`);
 });
 
 export { io };

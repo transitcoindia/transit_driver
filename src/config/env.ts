@@ -26,7 +26,15 @@ export function getAllowedOrigins(): string[] {
     process.env.RIDER_BACKEND_URL || 'http://localhost:8000',
     process.env.FRONTEND_APP_URL || 'http://localhost:3000',
     'https://www.shankhtech.com',
-    'https://pramaan.ondc.org'
+    'https://pramaan.ondc.org',
+    // Allow all localhost ports for development (Flutter web, etc.)
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:8000',
+    // Flutter web often uses ports in 50000-51000 range
+    ...Array.from({ length: 1000 }, (_, i) => `http://localhost:${50000 + i}`),
+    ...Array.from({ length: 1000 }, (_, i) => `http://127.0.0.1:${50000 + i}`)
   ];
   const extraCsv = process.env.CORS_ALLOWED_ORIGINS || '';
   const extras = extraCsv.split(',').map(s => s.trim()).filter(Boolean);

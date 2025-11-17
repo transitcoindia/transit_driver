@@ -12,7 +12,9 @@ import {
     getUserDetails,
     googleAuth,
     sendResetEmailController,
-    resetPassword
+    resetPassword,
+    getProfileCompletion,
+    uploadProfileImage
 } from '../controllers/auth_controllers/authControllers';
 import  { submitVehicleInfo, uploadDocuments } from '../controllers/driver_detailes_controller/driverController'
 import { authenticate } from '../middleware/authMiddle';
@@ -20,11 +22,13 @@ import { s2LocationIngest, s2LocationIngestPublic } from './locationIngest';
 import { limiter } from '../middleware/rateLimiter';
 import { NextFunction, Request, Response } from 'express';
 import { storeDriverRideDetails, startRideWithCode, endRide } from '../controllers/driver_detailes_controller/driverRides_Controller';
+import { activateSubscription } from '../controllers/driver_status/driverStatusController';
 // import { documentUpload, uploadLimiter } from '../middleware/uploadMiddleware';
 
 
 const uploadsDir = path.join(process.cwd(), 'uploads');
 const tempUploadsDir = path.join(uploadsDir, 'temp');
+const profileImagesDir = path.join(uploadsDir, 'profile-images');
 
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });;
@@ -32,6 +36,10 @@ if (!fs.existsSync(uploadsDir)) {
 
 if (!fs.existsSync(tempUploadsDir)) {
     fs.mkdirSync(tempUploadsDir, { recursive: true });
+}
+
+if (!fs.existsSync(profileImagesDir)) {
+    fs.mkdirSync(profileImagesDir, { recursive: true });
 }
 
 // Configure multer for temporary local storage before S3 upload
@@ -113,6 +121,28 @@ const handleMulterError = ((err: any, req: Request, res: Response, next: NextFun
     next();
 }) as ErrorRequestHandler;
 
+// Configure multer for profile image upload (single file)
+const profileImageUpload = multer({
+    storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB file size limit
+        files: 1 // Only 1 file
+    },
+    fileFilter: (req: Request, file: any, cb: multer.FileFilterCallback) => {
+        console.log('Profile image upload - fileFilter:', {
+            originalname: file.originalname,
+            fieldname: file.fieldname,
+            mimetype: file.mimetype
+        });
+        // Allow only images
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed for profile pictures'));
+        }
+    }
+}).single('profileImage'); // Single field named 'profileImage'
+
 const router = express.Router();
 
 // Registration routes
@@ -135,6 +165,14 @@ router.post('/end_ride', authenticate as RequestHandler, endRide as any);
 
 // Protected routes
 router.get('/profile', authenticate as RequestHandler, getUserDetails as RequestHandler);
+router.get('/profile/completion', authenticate as RequestHandler, getProfileCompletion as RequestHandler);
+router.post(
+    '/profile/image',
+    (authenticate as unknown) as RequestHandler,
+    profileImageUpload,
+    handleMulterError,
+    (uploadProfileImage as unknown) as RequestHandler
+);
 
 // Password reset routes
 router.post('/password-reset/request-otp', sendResetEmailController as RequestHandler);
@@ -149,6 +187,12 @@ router.post(
     documentUpload,
     handleMulterError,
     (uploadDocuments as unknown) as RequestHandler
+);
+
+router.post(
+    '/subscription/activate',
+    authenticate as RequestHandler,
+    activateSubscription as any
 );
 
 export default router;
