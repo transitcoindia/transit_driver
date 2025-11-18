@@ -4,3 +4,9 @@ node_modules
 
 render.env.example
 dist
+# Elastic Beanstalk Files
+# Ignore everything in .elasticbeanstalk except config files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
+!.elasticbeanstalk/config.yml
