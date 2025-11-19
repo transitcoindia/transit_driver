@@ -95,23 +95,33 @@ app.use('/api/driver', driverRoutes);
 app.use('/api/driver/s2', s2LocationIngest);
 app.use('/api/driver/testing', s2LocationIngestPublic);
 
-// Health check
+// Health check endpoint - EB checks this
 app.get('/health', (req: Request, res: Response) => {
-  res.json({
+  res.status(200).json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     websocket: 'enabled',
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    port: process.env.PORT || 3000
   });
+});
+
+// Root endpoint - also return health for EB compatibility
+app.get('/', (req: Request, res: Response) => {
+  // Return health status for EB health checks if they hit root
+  if (req.headers['user-agent']?.includes('ELB-HealthChecker')) {
+    res.status(200).json({
+      status: 'ok',
+      timestamp: new Date().toISOString()
+    });
+  } else {
+    res.send('Driver Backend Service');
+  }
 });
 
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error(err.stack);
   res.status(500).json({ error: 'Something went wrong!' });
-});
-
-app.get('/', (req: Request, res: Response) => {
-  res.send('Driver Backend Service');
 });
 
 // WebSocket connections
