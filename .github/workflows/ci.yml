@@ -26,6 +26,14 @@ jobs:
           cache: 'npm'
           cache-dependency-path: transit_driver/package-lock.json
       
+      - name: Verify package-lock.json exists
+        run: |
+          if [ ! -f "transit_driver/package-lock.json" ]; then
+            echo "⚠️  package-lock.json not found, cache may not work"
+          else
+            echo "✅ package-lock.json found"
+          fi
+      
       - name: Install dependencies
         working-directory: ./transit_driver
         run: npm ci
