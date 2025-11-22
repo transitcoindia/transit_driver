@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - develop
+      - driver-socket
   workflow_dispatch:
     inputs:
       environment:
@@ -20,7 +21,7 @@ jobs:
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/driver-socket' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     environment:
       name: staging
       url: ${{ steps.deploy.outputs.url }}
@@ -149,32 +150,13 @@ jobs:
           echo "Deployment to production ${{ job.status }}"
           # Add notification logic here (Slack, Discord, email, etc.)
 
-name: Transit Driver CI/CD
-
-on:
-  push:
-    branches:
-      - main
-      - develop
-
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: "Environment to deploy"
-        required: true
-        default: "staging"
-        type: choice
-        options:
-          - staging
-          - production
-
-jobs:
-  deploy:
+  deploy-ec2:
+    name: Deploy to EC2
     runs-on: ubuntu-latest
-
+    if: secrets.AWS_ACCESS_KEY_ID != ''
     env:
-      APP_DIR: ${{ secrets.EC2_APP_DIRECTORY }}   # example: /home/ec2-user/transit_driver
-      REGION: ${{ secrets.AWS_REGION }}
+      APP_DIR: ${{ secrets.EC2_APP_DIRECTORY || '/home/ec2-user/transit_driver' }}
+      REGION: ${{ secrets.AWS_REGION || 'ap-south-1' }}
 
     steps:
       - name: Checkout Code
@@ -207,68 +189,124 @@ jobs:
         working-directory: ./transit_driver
         run: npm run build
 
-      # ---------- AWS DEPLOYMENT -----------
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION || 'ap-south-1' }}
 
       - name: Deploy to EC2 via SSM (Auto detect environment)
         run: |
           echo "🚀 Starting deployment to EC2 via SSM..."
 
-          if [[ "${GITHUB_REF##*/}" == "main" ]]; then
+          # Determine environment and branch based on current branch
+          CURRENT_BRANCH="${GITHUB_REF##*/}"
+          
+          if [[ "$CURRENT_BRANCH" == "main" ]]; then
             INSTANCE_ID="${{ secrets.EC2_PRODUCTION_INSTANCE_ID }}"
             BRANCH="main"
-            echo "Environment: PRODUCTION"
+            ENV_NAME="PRODUCTION"
+            DATABASE_URL="${{ secrets.PRODUCTION_DATABASE_URL }}"
+          elif [[ "$CURRENT_BRANCH" == "driver-socket" ]] || [[ "$CURRENT_BRANCH" == "develop" ]]; then
+            INSTANCE_ID="${{ secrets.EC2_STAGING_INSTANCE_ID }}"
+            BRANCH="$CURRENT_BRANCH"
+            ENV_NAME="STAGING"
+            DATABASE_URL="${{ secrets.STAGING_DATABASE_URL }}"
           else
             INSTANCE_ID="${{ secrets.EC2_STAGING_INSTANCE_ID }}"
-            BRANCH="develop"
-            echo "Environment: STAGING"
+            BRANCH="$CURRENT_BRANCH"
+            ENV_NAME="STAGING"
+            DATABASE_URL="${{ secrets.STAGING_DATABASE_URL }}"
           fi
 
-          # ---- send command ----
+          echo "Environment: $ENV_NAME"
+          echo "Branch: $BRANCH"
+          echo "Instance ID: $INSTANCE_ID"
+
+          if [ -z "$INSTANCE_ID" ]; then
+            echo "⚠️  No EC2 instance ID configured for this branch. Skipping EC2 deployment."
+            exit 0
+          fi
+
+          # Send deployment command via SSM
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
             --parameters commands="[
+              'set -e',
               'cd $APP_DIR',
-              'echo \"Updating code from GitHub\"',
-              'git config --global credential.helper store',
+              'echo \"🔄 Updating code from GitHub (branch: $BRANCH)\"',
+              'git fetch origin',
+              'git checkout $BRANCH || git checkout -b $BRANCH origin/$BRANCH',
               'git pull origin $BRANCH',
+              'echo \"📦 Installing dependencies...\"',
               'npm ci --production',
+              'echo \"🔑 Generating Prisma client...\"',
               'npm run prisma:generate',
+              'echo \"🗄️  Running database migrations...\"',
               'npm run prisma:migrate || true',
+              'echo \"🔨 Building project...\"',
               'npm run build',
-              'if command -v pm2 &> /dev/null; then pm2 restart transit-driver || pm2 start dist/app.js --name transit-driver; else nohup node dist/app.js > app.log 2>&1 & fi',
-              'echo \"Deployment successful\"'
+              'echo \"🚀 Restarting application...\"',
+              'if command -v pm2 &> /dev/null; then pm2 restart transit-driver || pm2 start ecosystem.config.js --update-env || pm2 start dist/app.js --name transit-driver --update-env; else nohup node dist/app.js > app.log 2>&1 & fi',
+              'echo \"✅ Deployment successful\"'
             ]" \
+            --region "$REGION" \
             --query "Command.CommandId" \
             --output text)
 
           echo "⏳ Waiting for command to complete... (ID: $COMMAND_ID)"
 
-          # ---- wait for completion ----
+          # Wait for command to complete (max 5 minutes)
           for i in {1..60}; do
             STATUS=$(aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
               --instance-id "$INSTANCE_ID" \
+              --region "$REGION" \
               --query 'Status' \
               --output text 2>/dev/null || echo "InProgress")
 
             if [[ "$STATUS" == "Success" ]]; then
               echo "✅ Deployment Complete"
+              # Show output
+              aws ssm get-command-invocation \
+                --command-id "$COMMAND_ID" \
+                --instance-id "$INSTANCE_ID" \
+                --region "$REGION" \
+                --query "StandardOutputContent" \
+                --output text
               exit 0
             elif [[ "$STATUS" == "Failed" ]] || [[ "$STATUS" == "Cancelled" ]]; then
               echo "❌ Deployment Failed"
+              # Show error output
+              aws ssm get-command-invocation \
+                --command-id "$COMMAND_ID" \
+                --instance-id "$INSTANCE_ID" \
+                --region "$REGION" \
+                --query "StandardErrorContent" \
+                --output text
               exit 1
             fi
 
             sleep 5
           done
 
-          echo "❌ Deployment Timeout"
+          echo "❌ Deployment Timeout after 5 minutes"
           exit 1
+
+      - name: Health check (EC2)
+        if: always()
+        run: |
+          sleep 30
+          CURRENT_BRANCH="${GITHUB_REF##*/}"
+          if [[ "$CURRENT_BRANCH" == "main" ]]; then
+            if [ -n "${{ secrets.EC2_PRODUCTION_HOST }}" ]; then
+              curl -f http://${{ secrets.EC2_PRODUCTION_HOST }}/health || echo "⚠️  Health check failed"
+            fi
+          else
+            if [ -n "${{ secrets.EC2_STAGING_HOST }}" ]; then
+              curl -f http://${{ secrets.EC2_STAGING_HOST }}/health || echo "⚠️  Health check failed"
+            fi
+          fi
+        continue-on-error: true
