@@ -22,7 +22,7 @@ jobs:
       - name: Check for package-lock.json
         id: check-lockfile
         run: |
-          if [ -f "transit_driver/package-lock.json" ]; then
+          if [ -f "package-lock.json" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "✅ package-lock.json found - cache will be used"
           else
@@ -36,7 +36,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-          cache-dependency-path: transit_driver/package-lock.json
+          cache-dependency-path: package-lock.json
       
       - name: Setup Node.js ${{ matrix.node-version }} (without cache)
         if: steps.check-lockfile.outputs.exists != 'true'
@@ -45,22 +45,18 @@ jobs:
           node-version: ${{ matrix.node-version }}
       
       - name: Install dependencies
-        working-directory: transit_driver
         run: npm ci
       
       - name: Generate Prisma Client
-        working-directory: transit_driver
         run: npm run prisma:generate
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://user:password@localhost:5432/test' }}
       
       - name: Run ESLint
-        working-directory: transit_driver
         run: npm run lint
         continue-on-error: true
       
       - name: Run tests
-        working-directory: transit_driver
         run: npm test
         env:
           NODE_ENV: test
@@ -70,7 +66,6 @@ jobs:
           JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET || 'test-refresh-secret' }}
       
       - name: Build project
-        working-directory: transit_driver
         run: npm run build
       
       - name: Upload build artifacts
@@ -78,7 +73,7 @@ jobs:
         if: matrix.node-version == '20.x'
         with:
           name: dist-${{ github.sha }}
-          path: transit_driver/dist
+          path: dist
           retention-days: 7
 
   build-docker:
@@ -102,7 +97,6 @@ jobs:
         continue-on-error: true
       
       - name: Build Docker image
-        working-directory: transit_driver
         run: |
           docker build -t driver-backend:${{ github.sha }} .
           docker tag driver-backend:${{ github.sha }} driver-backend:latest
