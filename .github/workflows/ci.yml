@@ -19,20 +19,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Check for package-lock.json
+        id: check-lockfile
+        run: |
+          if [ -f "transit_driver/package-lock.json" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✅ package-lock.json found - cache will be used"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️  package-lock.json not found - cache will be skipped"
+          fi
+      
+      - name: Setup Node.js ${{ matrix.node-version }} (with cache)
+        if: steps.check-lockfile.outputs.exists == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
           cache-dependency-path: transit_driver/package-lock.json
       
-      - name: Verify package-lock.json exists
-        run: |
-          if [ ! -f "transit_driver/package-lock.json" ]; then
-            echo "⚠️  package-lock.json not found, cache may not work"
-          else
-            echo "✅ package-lock.json found"
-          fi
+      - name: Setup Node.js ${{ matrix.node-version }} (without cache)
+        if: steps.check-lockfile.outputs.exists != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
       
       - name: Install dependencies
         working-directory: ./transit_driver
