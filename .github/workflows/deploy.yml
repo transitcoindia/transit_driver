@@ -249,7 +249,15 @@ jobs:
               'echo \"🔨 Building project...\"',
               'npm run build',
               'echo \"🚀 Restarting application...\"',
-              'if command -v pm2 &> /dev/null; then pm2 restart transit-driver || pm2 start ecosystem.config.js --update-env || pm2 start dist/app.js --name transit-driver --update-env; else nohup node dist/app.js > app.log 2>&1 & fi',
+              'if command -v pm2 &> /dev/null; then',
+              '  if [ -f ecosystem.config.js ]; then',
+              '    pm2 restart transit-driver || pm2 start ecosystem.config.js --update-env',
+              '  else',
+              '    pm2 restart transit-driver || pm2 start dist/app.js --name transit-driver --update-env',
+              '  fi',
+              'else',
+              '  nohup node dist/app.js > app.log 2>&1 &',
+              'fi',
               'echo \"✅ Deployment successful\"'
             ]" \
             --region "$REGION" \

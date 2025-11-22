@@ -2,9 +2,9 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [main, develop, staging]
+    branches: [main, develop, staging, driver-socket]
   pull_request:
-    branches: [main, develop, staging]
+    branches: [main, develop, staging, driver-socket]
 
 jobs:
   lint-and-test:
@@ -66,7 +66,7 @@ jobs:
   build-docker:
     name: Build Docker Image
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/driver-socket')
     
     steps:
       - name: Checkout code
