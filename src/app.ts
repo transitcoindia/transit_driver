@@ -10,6 +10,7 @@ import driverRoutes from './routes/driverRoutes';
 import { s2LocationIngest, s2LocationIngestPublic } from './routes/locationIngest';
 import { initLocationWebSocketServer } from './services/locationWebSocketServer';
 import { setupSwagger } from "./swagger"; // ✅ added
+import redis from './clients/redis';
 
 dotenv.config();
 
@@ -96,11 +97,25 @@ app.use('/api/driver/s2', s2LocationIngest);
 app.use('/api/driver/testing', s2LocationIngestPublic);
 
 // Health check endpoint - EB checks this
-app.get('/health', (req: Request, res: Response) => {
+app.get('/health', async (req: Request, res: Response) => {
+  // Check Redis status
+  let redisStatus = 'unknown';
+  try {
+    if (redis.status === 'ready') {
+      await redis.ping();
+      redisStatus = 'connected';
+    } else {
+      redisStatus = redis.status || 'disconnected';
+    }
+  } catch (err) {
+    redisStatus = 'error';
+  }
+
   res.status(200).json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     websocket: 'enabled',
+    redis: redisStatus,
     environment: process.env.NODE_ENV || 'development',
     port: process.env.PORT || 3000
   });
@@ -120,8 +135,22 @@ app.get('/', (req: Request, res: Response) => {
 });
 
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
+  console.error('❌ Unhandled error:', {
+    message: err.message,
+    stack: err.stack,
+    url: req.url,
+    method: req.method,
+    body: req.body,
+  });
+  
+  res.status(500).json({ 
+    error: 'Something went wrong!',
+    // Only show details in development
+    ...(process.env.NODE_ENV === 'development' && {
+      message: err.message,
+      stack: err.stack?.split('\n').slice(0, 5), // First 5 lines of stack
+    })
+  });
 });
 
 // WebSocket connections
