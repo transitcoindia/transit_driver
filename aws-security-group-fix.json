@@ -1,0 +1,18 @@
+{
+  "Description": "Security Group rules for EC2 Instance Connect",
+  "Rules": [
+    {
+      "IpProtocol": "tcp",
+      "FromPort": 22,
+      "ToPort": 22,
+      "IpRanges": [
+        {
+          "CidrIp": "0.0.0.0/0",
+          "Description": "SSH access for EC2 Instance Connect"
+        }
+      ]
+    }
+  ],
+  "AWS_CLI_Command": "aws ec2 authorize-security-group-ingress --group-id <YOUR-SG-ID> --ip-permissions file://aws-security-group-fix.json --region ap-south-1"
+}
+
