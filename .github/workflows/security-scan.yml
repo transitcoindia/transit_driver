@@ -44,16 +44,16 @@ jobs:
           node-version: '20.x'
       
       - name: Install dependencies
-        working-directory: ./transit_driver
+        working-directory: transit_driver
         run: npm ci
       
       - name: Run npm audit
-        working-directory: ./transit_driver
+        working-directory: transit_driver
         run: npm audit --audit-level=moderate
         continue-on-error: true
       
       - name: Check for known vulnerabilities
-        working-directory: ./transit_driver
+        working-directory: transit_driver
         run: |
           npm audit --json > audit-results.json || true
           cat audit-results.json
