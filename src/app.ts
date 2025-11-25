@@ -134,6 +134,26 @@ app.get('/', (req: Request, res: Response) => {
   }
 });
 
+// Request logging middleware (before routes)
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const start = Date.now();
+  
+  // Log request
+  console.log(`📥 ${req.method} ${req.url}`, {
+    ip: req.ip || req.headers['x-forwarded-for'],
+    userAgent: req.headers['user-agent'],
+    timestamp: new Date().toISOString()
+  });
+  
+  // Log response when finished
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`📤 ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
+  });
+  
+  next();
+});
+
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('❌ Unhandled error:', {
     message: err.message,
@@ -141,16 +161,20 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     url: req.url,
     method: req.method,
     body: req.body,
+    headers: req.headers,
   });
   
-  res.status(500).json({ 
-    error: 'Something went wrong!',
-    // Only show details in development
-    ...(process.env.NODE_ENV === 'development' && {
-      message: err.message,
-      stack: err.stack?.split('\n').slice(0, 5), // First 5 lines of stack
-    })
-  });
+  // Ensure response is sent even if there's an error
+  if (!res.headersSent) {
+    res.status(500).json({ 
+      error: 'Something went wrong!',
+      // Only show details in development
+      ...(process.env.NODE_ENV === 'development' && {
+        message: err.message,
+        stack: err.stack?.split('\n').slice(0, 5), // First 5 lines of stack
+      })
+    });
+  }
 });
 
 // WebSocket connections
