@@ -22,9 +22,13 @@ const formatError = (err: unknown): string => {
 };
 
 const resolveGatewayUrl = () => {
-  if (API_GATEWAY_WS_URL) return API_GATEWAY_WS_URL;
-  const normalized = API_GATEWAY_URL.replace(/^http/i, 'ws');
-  return `${normalized}${SOCKET_IO_PATH}`;
+  // If API_GATEWAY_WS_URL is provided, use it (strip any existing path as we'll set it separately)
+  if (API_GATEWAY_WS_URL) {
+    // Remove any existing /socket.io/ path from the URL
+    return API_GATEWAY_WS_URL.replace(/\/socket\.io\/?$/, '');
+  }
+  // Otherwise, construct from API_GATEWAY_URL (without path - Socket.IO will add it)
+  return API_GATEWAY_URL.replace(/^http/i, 'ws').replace(/\/socket\.io\/?$/, '');
 };
 
 export class DriverWebSocketClient {
