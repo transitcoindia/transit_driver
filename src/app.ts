@@ -188,6 +188,18 @@ io.on('connection', (socket) => {
 
 initLocationWebSocketServer(httpServer);
 
+// Global error handlers to prevent crashes
+process.on('unhandledRejection', (reason: unknown, promise: Promise<any>) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit the process - log and continue
+});
+
+process.on('uncaughtException', (error: Error) => {
+  console.error('❌ Uncaught Exception:', error);
+  // Log but don't exit - allow the process to continue
+  // In production, you might want to exit gracefully here
+});
+
 const PORT = DRIVER_PORT;
 httpServer.listen(PORT, () => {
   console.log(`🚀 Driver backend server running on http://localhost:${PORT}`);

@@ -46,33 +46,40 @@ export class DriverWebSocketClient {
       return;
     }
 
-    const gatewayUrl = resolveGatewayUrl();
+    try {
+      const gatewayUrl = resolveGatewayUrl();
+      console.log(`[Gateway WS] Initializing connection to: ${gatewayUrl}`);
 
-    this.socket = io(gatewayUrl, {
-      transports: NODE_ENV === 'production' ? ['websocket'] : ['websocket', 'polling'],
-      upgrade: NODE_ENV !== 'production',
-      forceNew: true,
-      withCredentials: true,
-      autoConnect: false,
-      path: SOCKET_IO_PATH,
-      timeout: 60000,
-      reconnection: true,
-      reconnectionAttempts: this.maxReconnectAttempts,
-      reconnectionDelay: 8000,
-      reconnectionDelayMax: 30000,
-      randomizationFactor: 0.8,
-      extraHeaders: {
-        Origin: API_GATEWAY_PUBLIC_ORIGIN || API_GATEWAY_URL,
-        'User-Agent': 'DriverApp/1.0.0'
-      },
-      auth: {
-        driverId: this.driverId,
-        accessToken: this.accessToken
-      }
-    });
+      this.socket = io(gatewayUrl, {
+        transports: NODE_ENV === 'production' ? ['websocket'] : ['websocket', 'polling'],
+        upgrade: NODE_ENV !== 'production',
+        forceNew: true,
+        withCredentials: true,
+        autoConnect: false,
+        path: SOCKET_IO_PATH,
+        timeout: 60000,
+        reconnection: true,
+        reconnectionAttempts: this.maxReconnectAttempts,
+        reconnectionDelay: 8000,
+        reconnectionDelayMax: 30000,
+        randomizationFactor: 0.8,
+        extraHeaders: {
+          Origin: API_GATEWAY_PUBLIC_ORIGIN || API_GATEWAY_URL,
+          'User-Agent': 'DriverApp/1.0.0'
+        },
+        auth: {
+          driverId: this.driverId,
+          accessToken: this.accessToken
+        }
+      });
 
-    this.registerEventHandlers();
-    this.scheduleConnection();
+      this.registerEventHandlers();
+      this.scheduleConnection();
+    } catch (error) {
+      console.error('❌ Failed to initialize WebSocket client:', formatError(error));
+      // Don't throw - allow the HTTP request to proceed even if WebSocket fails
+      this.socket = null;
+    }
   }
 
   private registerEventHandlers() {
@@ -178,12 +185,16 @@ export class DriverWebSocketClient {
     });
   }
 
-  public async connect() {
+  public connect(): void {
+    // Non-blocking connection - fire and forget
+    // The connection is already scheduled in scheduleConnection()
+    // This method is kept for explicit connection attempts but doesn't block
     if (this.socket && !this.socket.connected) {
-      await new Promise<void>((resolve) => {
-        this.socket!.connect();
-        this.socket!.once('connect', () => resolve());
-      });
+      try {
+        this.socket.connect();
+      } catch (error) {
+        console.error('⚠️ Error initiating socket connection:', formatError(error));
+      }
     }
   }
 
@@ -240,17 +251,26 @@ export class DriverWebSocketClient {
   private scheduleConnection() {
     if (!this.socket || this.connectionQueued) return;
 
-    this.connectionQueued = true;
-    DriverWebSocketClient.globalConnectionDelay += 2000;
-    const delay = DriverWebSocketClient.globalConnectionDelay + Math.random() * 3000;
+    try {
+      this.connectionQueued = true;
+      DriverWebSocketClient.globalConnectionDelay += 2000;
+      const delay = DriverWebSocketClient.globalConnectionDelay + Math.random() * 3000;
 
-    console.log(`Scheduling gateway connection in ${(delay / 1000).toFixed(1)}s to avoid bursts...`);
+      console.log(`Scheduling gateway connection in ${(delay / 1000).toFixed(1)}s to avoid bursts...`);
 
-    setTimeout(() => {
+      setTimeout(() => {
+        this.connectionQueued = false;
+        if (this.socket && !this.socket.connected) {
+          try {
+            this.socket.connect();
+          } catch (error) {
+            console.error('❌ Error during scheduled connection:', formatError(error));
+          }
+        }
+      }, delay);
+    } catch (error) {
+      console.error('❌ Error scheduling connection:', formatError(error));
       this.connectionQueued = false;
-      if (this.socket && !this.socket.connected) {
-        this.socket.connect();
-      }
-    }, delay);
+    }
   }
 }
