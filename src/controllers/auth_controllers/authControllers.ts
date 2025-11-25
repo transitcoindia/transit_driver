@@ -287,7 +287,9 @@ export const loginWithEmail = async (req: Request, res: Response, next: NextFunc
         
         // Create new WebSocket client with dynamic driver ID and accessToken
         driverWebSocketClient = new DriverWebSocketClient(driver.id, accessToken);
-        await driverWebSocketClient.connect();
+        driverWebSocketClient.connect().catch((socketError: unknown) => {
+          console.error('⚠️ Gateway socket connection failed (login will proceed):', socketError);
+        });
 
         console.log('✅ Driver logged in successfully:', driver.id);
 
