@@ -16,7 +16,8 @@ redis.on('connect', () => console.log('✅ Redis connected'));
 redis.on('ready', () => console.log('✅ Redis ready'));
 redis.on('error', (err) => {
   console.error('❌ Redis error:', err.message);
-  console.error('Redis error code:', err.code);
+  const errorCode = (err as NodeJS.ErrnoException).code;
+  console.error('Redis error code:', errorCode ?? 'unknown');
 });
 redis.on('close', () => console.warn('⚠️ Redis connection closed'));
 redis.on('reconnecting', () => console.log('🔄 Redis reconnecting...'));
