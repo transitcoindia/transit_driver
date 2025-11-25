@@ -53,6 +53,9 @@ export class DriverWebSocketClient {
     try {
       const gatewayUrl = resolveGatewayUrl();
       console.log(`[Gateway WS] Initializing connection to: ${gatewayUrl}`);
+      console.log(`[Gateway WS] Socket.IO path: ${SOCKET_IO_PATH}`);
+      console.log(`[Gateway WS] Full URL will be: ${gatewayUrl}${SOCKET_IO_PATH}`);
+      console.log(`[Gateway WS] Origin header: ${API_GATEWAY_PUBLIC_ORIGIN || API_GATEWAY_URL}`);
 
       this.socket = io(gatewayUrl, {
         transports: NODE_ENV === 'production' ? ['websocket'] : ['websocket', 'polling'],
@@ -110,7 +113,16 @@ export class DriverWebSocketClient {
     });
 
     this.socket.on('connect_error', (error) => {
-      console.warn('❌ Connection error:', formatError(error));
+      const errorDetails = {
+        message: formatError(error),
+        description: (error as any)?.description,
+        type: (error as any)?.type,
+        data: (error as any)?.data,
+        transport: (error as any)?.transport,
+        socketId: this.socket?.id,
+        connected: this.socket?.connected
+      };
+      console.warn('❌ Connection error details:', JSON.stringify(errorDetails, null, 2));
       this.reconnectAttempts++;
 
       const description = String((error as any)?.description || '');
