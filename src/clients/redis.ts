@@ -14,9 +14,11 @@ const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
 
 redis.on('connect', () => console.log('✅ Redis connected'));
 redis.on('ready', () => console.log('✅ Redis ready'));
-redis.on('error', (err) => {
+redis.on('error', (err: Error & { code?: string }) => {
   console.error('❌ Redis error:', err.message);
-  console.error('Redis error code:', err.code);
+  if (err.code) {
+    console.error('Redis error code:', err.code);
+  }
 });
 redis.on('close', () => console.warn('⚠️ Redis connection closed'));
 redis.on('reconnecting', () => console.log('🔄 Redis reconnecting...'));

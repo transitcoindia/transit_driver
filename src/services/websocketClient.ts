@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import readline from 'readline';
+import { API_GATEWAY_URL, API_GATEWAY_PUBLIC_ORIGIN } from '../config/env';
 
 export class DriverWebSocketClient {
   private socket: Socket;
@@ -16,8 +17,7 @@ export class DriverWebSocketClient {
     this.accessToken = accessToken;
     
     // Connect to API Gateway WebSocket server
-    const gatewayUrl = process.env.API_GATEWAY_WS_URL || process.env.API_GATEWAY_URL || 'http://localhost:3005';
-    this.socket = io(gatewayUrl, {
+    this.socket = io(API_GATEWAY_URL, {
       // In production, force pure WebSocket to avoid Cloudflare/host 429 on polling
       transports: process.env.NODE_ENV === 'production' ? ['websocket'] : ['websocket', 'polling'],
       upgrade: false,
@@ -33,7 +33,7 @@ export class DriverWebSocketClient {
       randomizationFactor: 0.8, // More randomization
       // Set explicit Origin for hosts that enforce WS origin checks
       extraHeaders: {
-        Origin: process.env.API_GATEWAY_PUBLIC_ORIGIN || 'https://api-gateway-transit.onrender.com',
+        Origin: API_GATEWAY_PUBLIC_ORIGIN || API_GATEWAY_URL,
         'User-Agent': 'DriverApp/1.0.0'
       },
       auth: { 
@@ -79,10 +79,14 @@ export class DriverWebSocketClient {
       const message = (error && (error as any).message) || '';
       const description = (error && (error as any).description) || '';
       
+      // Safely check for 429 errors - description might be an object, not a string
+      const descriptionStr = typeof description === 'string' ? description : 
+                            (description && typeof description === 'object' ? JSON.stringify(description) : '');
+      
       if (
         (typeof message === 'string' && message.includes('429')) ||
-        (typeof description === 'string' && description.includes('429')) ||
-        (error && (error as any).type === 'TransportError' && description.includes('429'))
+        (typeof descriptionStr === 'string' && descriptionStr.includes('429')) ||
+        (error && (error as any).type === 'TransportError' && typeof descriptionStr === 'string' && descriptionStr.includes('429'))
       ) {
         const backoffMs = 60000 + (this.reconnectAttempts * 30000); // 60s + 30s per attempt
         console.warn(` Received 429. Backing off for ${backoffMs / 1000}s before next attempt.`);

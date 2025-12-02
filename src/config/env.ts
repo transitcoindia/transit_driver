@@ -15,9 +15,9 @@ export const PORT = Number(process.env.PORT || 3000);
 export const API_GATEWAY_URL = val([
   'API_GATEWAY_WS_URL',
   'API_GATEWAY_URL'
-], 'http://localhost:3005')!;
+], 'https://api-gateway-transit-iywb.onrender.com')!;
 
-export const API_GATEWAY_PUBLIC_ORIGIN = val(['API_GATEWAY_PUBLIC_ORIGIN']);
+export const API_GATEWAY_PUBLIC_ORIGIN = val(['API_GATEWAY_PUBLIC_ORIGIN'], 'https://api-gateway-transit-iywb.onrender.com');
 export const SOCKET_IO_PATH = '/socket.io/';
 
 export function getAllowedOrigins(): string[] {

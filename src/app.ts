@@ -1,7 +1,6 @@
 
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import { PrismaClient } from '@prisma/client';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import dotenv from 'dotenv';
@@ -11,8 +10,20 @@ import { s2LocationIngest, s2LocationIngestPublic } from './routes/locationInges
 import { initLocationWebSocketServer } from './services/locationWebSocketServer';
 import { setupSwagger } from "./swagger"; // ✅ added
 import redis from './clients/redis';
+import { validateEnvironment, printEnvironmentInfo } from './config/validateEnv';
+import { prisma } from './prismaClient'; // ✅ Use singleton instance
 
 dotenv.config();
+
+// Validate environment variables on startup
+const envValidation = validateEnvironment();
+if (!envValidation.valid) {
+  console.error('❌ Failed to start server due to missing required environment variables');
+  console.error('Please check your .env file or environment configuration\n');
+  process.exit(1);
+}
+
+printEnvironmentInfo();
 
 const app: Express = express();
 const httpServer = createServer(app);
@@ -31,7 +42,26 @@ const io = new SocketIOServer(httpServer, {
   path: SOCKET_IO_PATH,
 });
 
-const prisma = new PrismaClient();
+// Using singleton Prisma client from ./prismaClient.ts
+// This prevents multiple connections and properly manages connection pooling
+
+// Test database connection on startup
+async function testDatabaseConnection() {
+  try {
+    await prisma.$connect();
+    console.log('✅ Database connection established');
+    return true;
+  } catch (error: any) {
+    console.error('❌ Database connection failed:', error.message);
+    console.error('   Please check your DATABASE_URL environment variable');
+    // Don't exit - let the server start but log the error
+    // The health check endpoint will show database status
+    return false;
+  }
+}
+
+// Test database connection
+testDatabaseConnection().catch(console.error);
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -111,14 +141,60 @@ app.get('/health', async (req: Request, res: Response) => {
     redisStatus = 'error';
   }
 
-  res.status(200).json({
-    status: 'ok',
+  // Check database status and connection pool metrics
+  let dbStatus = 'unknown';
+  let dbMetrics = {};
+  try {
+    // Test connection
+    await prisma.$queryRaw`SELECT 1`;
+    dbStatus = 'connected';
+
+    // Get connection pool metrics (Prisma internal metrics)
+    try {
+      const poolMetrics = await prisma.$queryRaw<Array<{
+        count: number,
+        state: string
+      }>>`
+        SELECT count(*), state 
+        FROM pg_stat_activity 
+        WHERE datname = current_database()
+        GROUP BY state
+      `;
+      
+      const totalConnections = poolMetrics.reduce((sum, m) => sum + Number(m.count), 0);
+      const activeConnections = poolMetrics.find(m => m.state === 'active')?.count || 0;
+      const idleConnections = poolMetrics.find(m => m.state === 'idle')?.count || 0;
+
+      dbMetrics = {
+        total_connections: totalConnections,
+        active_connections: Number(activeConnections),
+        idle_connections: Number(idleConnections),
+        states: poolMetrics.map(m => ({ state: m.state, count: Number(m.count) }))
+      };
+    } catch (metricsErr) {
+      // Metrics collection failed, but connection works
+      dbMetrics = { info: 'Connection pool metrics unavailable (may need permissions)' };
+    }
+  } catch (err: any) {
+    dbStatus = `error: ${err.message}`;
+  }
+
+  const healthStatus = {
+    status: dbStatus === 'connected' ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
     websocket: 'enabled',
+    database: {
+      status: dbStatus,
+      ...(Object.keys(dbMetrics).length > 0 && { pool: dbMetrics })
+    },
     redis: redisStatus,
     environment: process.env.NODE_ENV || 'development',
     port: process.env.PORT || 3000
-  });
+  };
+
+  // Return 200 even if degraded so health checks don't fail
+  // But include status so monitoring can detect issues
+  res.status(200).json(healthStatus);
 });
 
 // Root endpoint - also return health for EB compatibility
@@ -189,12 +265,63 @@ io.on('connection', (socket) => {
 initLocationWebSocketServer(httpServer);
 
 const PORT = DRIVER_PORT;
+
+// Graceful shutdown handlers
+process.on('SIGTERM', async () => {
+  console.log('🛑 SIGTERM received, shutting down gracefully...');
+  httpServer.close(() => {
+    console.log('✅ HTTP server closed');
+    prisma.$disconnect()
+      .then(() => {
+        console.log('✅ Database connection closed');
+        redis.quit();
+        process.exit(0);
+      })
+      .catch((err) => {
+        console.error('❌ Error closing database connection:', err);
+        process.exit(1);
+      });
+  });
+});
+
+process.on('SIGINT', async () => {
+  console.log('🛑 SIGINT received, shutting down gracefully...');
+  httpServer.close(() => {
+    console.log('✅ HTTP server closed');
+    prisma.$disconnect()
+      .then(() => {
+        console.log('✅ Database connection closed');
+        redis.quit();
+        process.exit(0);
+      })
+      .catch((err) => {
+        console.error('❌ Error closing database connection:', err);
+        process.exit(1);
+      });
+  });
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error: Error) => {
+  console.error('❌ Uncaught Exception:', error);
+  console.error('Stack:', error.stack);
+  // Don't exit immediately - let the error handler middleware deal with it
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  console.error('❌ Unhandled Rejection at:', promise);
+  console.error('Reason:', reason);
+  // Don't exit - log and continue
+});
+
 httpServer.listen(PORT, () => {
   console.log(`🚀 Driver backend server running on http://localhost:${PORT}`);
   console.log(`🔌 WebSocket server: ws://localhost:${PORT}${SOCKET_IO_PATH}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📘 Swagger docs: http://localhost:${PORT}/api-docs`);
+  console.log(`\n✅ Server started successfully!\n`);
 });
 
 export { io };
