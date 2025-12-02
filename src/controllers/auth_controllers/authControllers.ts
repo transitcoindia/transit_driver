@@ -286,8 +286,10 @@ export const loginWithEmail = async (req: Request, res: Response, next: NextFunc
         }
         
         // Create new WebSocket client with dynamic driver ID and accessToken
+        // Connection is non-blocking and scheduled automatically
         driverWebSocketClient = new DriverWebSocketClient(driver.id, accessToken);
-        await driverWebSocketClient.connect();
+        // Explicitly trigger connection (non-blocking)
+        driverWebSocketClient.connect();
 
         console.log('✅ Driver logged in successfully:', driver.id);
 
