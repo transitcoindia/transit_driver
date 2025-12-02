@@ -1,97 +1,139 @@
 import { io, Socket } from 'socket.io-client';
 import readline from 'readline';
+import {
+  API_GATEWAY_URL,
+  API_GATEWAY_WS_URL,
+  API_GATEWAY_PUBLIC_ORIGIN,
+  SOCKET_IO_PATH,
+  ENABLE_GATEWAY_SOCKET,
+  NODE_ENV
+} from '../config/env';
+
+const formatError = (err: unknown): string => {
+  if (!err) return 'Unknown error';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+};
+
+const resolveGatewayUrl = () => {
+  // If API_GATEWAY_WS_URL is provided, use it (strip any existing path as we'll set it separately)
+  if (API_GATEWAY_WS_URL) {
+    // Remove any existing /socket.io/ path from the URL
+    return API_GATEWAY_WS_URL.replace(/\/socket\.io\/?$/, '');
+  }
+  // Otherwise, construct from API_GATEWAY_URL (without path - Socket.IO will add it)
+  return API_GATEWAY_URL.replace(/^http/i, 'ws').replace(/\/socket\.io\/?$/, '');
+};
 
 export class DriverWebSocketClient {
-  private socket: Socket;
+  private socket: Socket | null = null;
   private driverId: string;
   private accessToken: string;
-  private isConnected: boolean = false;
-  private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 5;
-  private connectionQueue: boolean = false;
-  private static globalConnectionDelay: number = 0;
+  private isConnected = false;
+  private reconnectAttempts = 0;
+  private readonly maxReconnectAttempts = 5;
+  private connectionQueued = false;
+  private static globalConnectionDelay = 0;
 
   constructor(driverId: string, accessToken: string) {
     this.driverId = driverId;
     this.accessToken = accessToken;
-    
-    // Connect to API Gateway WebSocket server
-    const gatewayUrl = process.env.API_GATEWAY_WS_URL || process.env.API_GATEWAY_URL || 'http://localhost:3005';
-    this.socket = io(gatewayUrl, {
-      // In production, force pure WebSocket to avoid Cloudflare/host 429 on polling
-      transports: process.env.NODE_ENV === 'production' ? ['websocket'] : ['websocket', 'polling'],
-      upgrade: false,
-      forceNew: true,
-      withCredentials: true,
-      autoConnect: false,
-      path: '/socket.io/',
-      timeout: 60000, // Increased timeout
-      reconnection: true,
-      reconnectionAttempts: this.maxReconnectAttempts,
-      reconnectionDelay: 8000, // Increased initial delay
-      reconnectionDelayMax: 30000, // Increased max delay
-      randomizationFactor: 0.8, // More randomization
-      // Set explicit Origin for hosts that enforce WS origin checks
-      extraHeaders: {
-        Origin: process.env.API_GATEWAY_PUBLIC_ORIGIN || 'https://api-gateway-transit.onrender.com',
-        'User-Agent': 'DriverApp/1.0.0'
-      },
-      auth: { 
-        driverId: this.driverId, 
-        accessToken: this.accessToken 
-      }
-    });
-    
-    this.setupEventListeners();
-    // Add staggered delay to prevent burst connections
-    this.scheduleConnection();
+
+    if (!ENABLE_GATEWAY_SOCKET) {
+      console.log('[Gateway WS] Disabled via ENABLE_GATEWAY_SOCKET flag.');
+      return;
+    }
+
+    try {
+      const gatewayUrl = resolveGatewayUrl();
+      console.log(`[Gateway WS] Initializing connection to: ${gatewayUrl}`);
+      console.log(`[Gateway WS] Socket.IO path: ${SOCKET_IO_PATH}`);
+      console.log(`[Gateway WS] Full URL will be: ${gatewayUrl}${SOCKET_IO_PATH}`);
+      console.log(`[Gateway WS] Origin header: ${API_GATEWAY_PUBLIC_ORIGIN || API_GATEWAY_URL}`);
+
+      this.socket = io(gatewayUrl, {
+        transports: NODE_ENV === 'production' ? ['websocket'] : ['websocket', 'polling'],
+        upgrade: NODE_ENV !== 'production',
+        forceNew: true,
+        withCredentials: true,
+        autoConnect: false,
+        path: SOCKET_IO_PATH,
+        timeout: 60000,
+        reconnection: true,
+        reconnectionAttempts: this.maxReconnectAttempts,
+        reconnectionDelay: 8000,
+        reconnectionDelayMax: 30000,
+        randomizationFactor: 0.8,
+        extraHeaders: {
+          Origin: API_GATEWAY_PUBLIC_ORIGIN || API_GATEWAY_URL,
+          'User-Agent': 'DriverApp/1.0.0'
+        },
+        auth: {
+          driverId: this.driverId,
+          accessToken: this.accessToken
+        }
+      });
+
+      this.registerEventHandlers();
+      this.scheduleConnection();
+    } catch (error) {
+      console.error('❌ Failed to initialize WebSocket client:', formatError(error));
+      // Don't throw - allow the HTTP request to proceed even if WebSocket fails
+      this.socket = null;
+    }
   }
 
-  private setupEventListeners() {
+  private registerEventHandlers() {
+    if (!this.socket) return;
+
     this.socket.on('connect', () => {
-      console.log(' Connected to API Gateway WebSocket server');
+      console.log('✅ Connected to API Gateway WebSocket server');
       this.isConnected = true;
       this.reconnectAttempts = 0;
-      
-      // Authenticate immediately after connection
       this.authenticate();
     });
 
     this.socket.on('authenticated', (response) => {
-      console.log(' Driver authenticated:', response);
+      console.log('🔐 Driver authenticated:', response);
     });
 
     this.socket.on('disconnect', (reason) => {
-      console.log(' Disconnected from API Gateway WebSocket server:', reason);
+      console.log('⚠️ Disconnected from API Gateway WebSocket server:', reason);
       this.isConnected = false;
-      
+
       if (reason === 'io server disconnect') {
-        // Server disconnected, try to reconnect
-        this.socket.connect();
+        this.socket?.connect();
       }
     });
 
     this.socket.on('connect_error', (error) => {
-      console.error(' Connection error:', error);
+      const errorDetails = {
+        message: formatError(error),
+        description: (error as any)?.description,
+        type: (error as any)?.type,
+        data: (error as any)?.data,
+        transport: (error as any)?.transport,
+        socketId: this.socket?.id,
+        connected: this.socket?.connected
+      };
+      console.warn('❌ Connection error details:', JSON.stringify(errorDetails, null, 2));
       this.reconnectAttempts++;
-      
-      // If the platform responds with 429, back off much longer to respect rate limits
-      const message = (error && (error as any).message) || '';
-      const description = (error && (error as any).description) || '';
-      
-      if (
-        (typeof message === 'string' && message.includes('429')) ||
-        (typeof description === 'string' && description.includes('429')) ||
-        (error && (error as any).type === 'TransportError' && description.includes('429'))
-      ) {
-        const backoffMs = 60000 + (this.reconnectAttempts * 30000); // 60s + 30s per attempt
-        console.warn(` Received 429. Backing off for ${backoffMs / 1000}s before next attempt.`);
-        
-        // Disconnect and wait before reconnecting
-        this.socket.disconnect();
+
+      const description = String((error as any)?.description || '');
+      const message = `${formatError(error)} ${description}`.trim();
+
+      if (message.includes('429')) {
+        const backoffMs = 60000 + this.reconnectAttempts * 30000;
+        console.warn(`⚠️ Received 429. Backing off for ${backoffMs / 1000}s before retry.`);
+        this.socket?.disconnect();
         setTimeout(() => {
-          if (!this.socket.connected) {
-            console.log(` Attempting reconnection after ${backoffMs / 1000}s backoff...`);
+          if (this.socket && !this.socket.connected) {
+            console.log('🔄 Retrying gateway connection after backoff...');
             this.socket.connect();
           }
         }, backoffMs);
@@ -99,46 +141,43 @@ export class DriverWebSocketClient {
     });
 
     this.socket.on('reconnect', (attemptNumber) => {
-      console.log(' Reconnected after', attemptNumber, 'attempts');
+      console.log('🔄 Reconnected after', attemptNumber, 'attempt(s)');
       this.authenticate();
     });
 
     this.socket.on('reconnect_error', (error) => {
-      console.error(' Reconnection error:', error);
+      console.error('Reconnection error:', formatError(error));
     });
 
     this.socket.on('reconnect_failed', () => {
-      console.error(' Reconnection failed after', this.maxReconnectAttempts, 'attempts');
+      console.error('❗ Reconnection failed after', this.maxReconnectAttempts, 'attempts');
     });
 
     this.socket.on('error', (error) => {
-      console.error('WebSocket error:', error);
+      console.error('WebSocket error:', formatError(error));
     });
 
     this.socket.on('newRideRequest', (rideData) => {
-      console.log('Received new ride request:', rideData);
+      console.log('🚘 New ride request:', rideData);
       this.promptAcceptOrReject(rideData.rideId);
     });
 
-    // Handle server ping to keep connection alive
     this.socket.on('serverPing', (data) => {
-      console.log(' Server ping received:', data);
-      // Respond with pong
-      this.socket.emit('pong', { timestamp: Date.now() });
+      console.log('📡 Server ping:', data);
+      this.socket?.emit('pong', { timestamp: Date.now() });
     });
 
-    // Handle connection info
     this.socket.on('connectionInfo', (data) => {
-      console.log(' Connection info:', data);
+      console.log('ℹ️ Connection info:', data);
     });
   }
 
   private authenticate() {
     if (this.socket && this.isConnected) {
-      console.log(' Authenticating driver...');
-      this.socket.emit('authenticate', { 
-        driverId: this.driverId, 
-        accessToken: this.accessToken 
+      console.log('Authenticating driver with gateway...');
+      this.socket.emit('authenticate', {
+        driverId: this.driverId,
+        accessToken: this.accessToken
       });
     }
   }
@@ -161,24 +200,28 @@ export class DriverWebSocketClient {
     });
   }
 
-  public async connect() {
-    if (!this.socket.connected) {
-      await new Promise<void>((resolve) => {
+  public connect(): void {
+    // Non-blocking connection - fire and forget
+    // The connection is already scheduled in scheduleConnection()
+    // This method is kept for explicit connection attempts but doesn't block
+    if (this.socket && !this.socket.connected) {
+      try {
         this.socket.connect();
-        this.socket.once('connect', () => resolve());
-      });
+      } catch (error) {
+        console.error('⚠️ Error initiating socket connection:', formatError(error));
+      }
     }
   }
 
   public disconnect() {
-    if (this.socket.connected) {
+    if (this.socket?.connected) {
       this.socket.disconnect();
       this.isConnected = false;
     }
   }
 
   public updateLocation(location: { latitude: number; longitude: number }) {
-    if (this.isConnected) {
+    if (this.isConnected && this.socket) {
       this.socket.emit('driverLocationUpdate', {
         driverId: this.driverId,
         location,
@@ -188,10 +231,10 @@ export class DriverWebSocketClient {
   }
 
   public acceptRide(rideId: string) {
-    if (this.isConnected) {
+    if (this.isConnected && this.socket) {
       this.socket.emit('acceptRide', {
         driverId: this.driverId,
-        accessToken: this.accessToken, // send token here
+        accessToken: this.accessToken,
         rideId,
         timestamp: new Date().toISOString()
       });
@@ -199,7 +242,7 @@ export class DriverWebSocketClient {
   }
 
   public rejectRide(rideId: string) {
-    if (this.isConnected) {
+    if (this.isConnected && this.socket) {
       this.socket.emit('rejectRide', {
         driverId: this.driverId,
         rideId,
@@ -209,7 +252,7 @@ export class DriverWebSocketClient {
   }
 
   public on(event: string, callback: (data: any) => void) {
-    this.socket.on(event, callback);
+    this.socket?.on(event, callback);
   }
 
   public getConnectionStatus(): boolean {
@@ -217,27 +260,32 @@ export class DriverWebSocketClient {
   }
 
   public getSocketId(): string | undefined {
-    return this.socket.id;
+    return this.socket?.id;
   }
 
   private scheduleConnection() {
-    if (this.connectionQueue) {
-      return; // Already queued
+    if (!this.socket || this.connectionQueued) return;
+
+    try {
+      this.connectionQueued = true;
+      DriverWebSocketClient.globalConnectionDelay += 2000;
+      const delay = DriverWebSocketClient.globalConnectionDelay + Math.random() * 3000;
+
+      console.log(`Scheduling gateway connection in ${(delay / 1000).toFixed(1)}s to avoid bursts...`);
+
+      setTimeout(() => {
+        this.connectionQueued = false;
+        if (this.socket && !this.socket.connected) {
+          try {
+            this.socket.connect();
+          } catch (error) {
+            console.error('❌ Error during scheduled connection:', formatError(error));
+          }
+        }
+      }, delay);
+    } catch (error) {
+      console.error('❌ Error scheduling connection:', formatError(error));
+      this.connectionQueued = false;
     }
-    
-    this.connectionQueue = true;
-    
-    // Add global delay to prevent simultaneous connections
-    DriverWebSocketClient.globalConnectionDelay += 2000; // 2 seconds between connections
-    const delay = DriverWebSocketClient.globalConnectionDelay + Math.random() * 3000;
-    
-    console.log(` Scheduling connection in ${delay / 1000}s to avoid burst...`);
-    
-    setTimeout(() => {
-      this.connectionQueue = false;
-      if (!this.socket.connected) {
-        this.socket.connect();
-      }
-    }, delay);
   }
 }

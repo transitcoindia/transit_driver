@@ -9,16 +9,34 @@ const val = (keys: string[], fallback?: string): string | undefined => {
   return fallback;
 };
 
+const DEFAULT_SOCKET_PATH = '/socket.io/';
+const normalizeWsProtocol = (url: string) => url.replace(/^http/i, 'ws');
+
 export const NODE_ENV = process.env.NODE_ENV || 'development';
 export const PORT = Number(process.env.PORT || 3000);
 
+// API Gateway configuration with fallbacks for both local and production
 export const API_GATEWAY_URL = val([
-  'API_GATEWAY_WS_URL',
   'API_GATEWAY_URL'
-], 'http://localhost:3005')!;
+], NODE_ENV === 'production' 
+  ? 'https://api-gateway-transit-iywb.onrender.com' 
+  : 'http://localhost:3005'
+)!;
 
-export const API_GATEWAY_PUBLIC_ORIGIN = val(['API_GATEWAY_PUBLIC_ORIGIN']);
-export const SOCKET_IO_PATH = '/socket.io/';
+export const SOCKET_IO_PATH = process.env.SOCKET_IO_PATH || DEFAULT_SOCKET_PATH;
+
+export const API_GATEWAY_WS_URL = val(
+  ['API_GATEWAY_WS_URL'],
+  `${normalizeWsProtocol(API_GATEWAY_URL)}${SOCKET_IO_PATH}`
+)!;
+
+export const ENABLE_GATEWAY_SOCKET =
+  (process.env.ENABLE_GATEWAY_SOCKET || 'true').toLowerCase() !== 'false';
+
+export const API_GATEWAY_PUBLIC_ORIGIN = val(
+  ['API_GATEWAY_PUBLIC_ORIGIN'], 
+  API_GATEWAY_URL
+);
 
 export function getAllowedOrigins(): string[] {
   const defaults = [

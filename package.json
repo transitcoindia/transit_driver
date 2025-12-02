@@ -20,7 +20,9 @@
     "docker:build": "docker build -t driver-backend .",
     "docker:run": "docker run -p 3000:3000 driver-backend",
     "deploy:render": "npm run build && npm start",
-    "health:check": "curl -f http://localhost:3000/health || exit 1"
+    "health:check": "curl -f http://localhost:3000/health || exit 1",
+    "check:env": "node scripts/check-env.js",
+    "prestart": "npm run check:env"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.470.0",

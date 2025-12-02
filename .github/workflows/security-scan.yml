@@ -2,9 +2,9 @@ name: Security Scan
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, driver-socket]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, driver-socket]
   schedule:
     # Run weekly on Monday at 00:00 UTC
     - cron: '0 0 * * 1'
@@ -18,12 +18,31 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Setup Node.js
+
+      - name: Check for package-lock.json
+        id: check-lockfile
+        run: |
+          if [ -f "package-lock.json" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✅ package-lock.json found - cache will be used"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️  package-lock.json not found - cache will be skipped"
+          fi
+      
+      - name: Setup Node.js (with cache)
+        if: steps.check-lockfile.outputs.exists == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
           cache: 'npm'
           cache-dependency-path: transit_driver/package-lock.json
+      
+      - name: Setup Node.js (without cache)
+        if: steps.check-lockfile.outputs.exists != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
       
       - name: Install dependencies
         working-directory: ./transit_driver
