@@ -22,7 +22,7 @@ jobs:
       - name: Check for package-lock.json
         id: check-lockfile
         run: |
-          if [ -f "package-lock.json" ]; then
+          if [ -f "transit_driver/package-lock.json" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "✅ package-lock.json found - cache will be used"
           else
