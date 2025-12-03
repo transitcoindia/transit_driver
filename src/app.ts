@@ -121,12 +121,7 @@ app.use(express.json());
 // ✅ Initialize Swagger documentation
 setupSwagger(app);
 
-// Routes
-app.use('/api/driver', driverRoutes);
-app.use('/api/driver/s2', s2LocationIngest);
-app.use('/api/driver/testing', s2LocationIngestPublic);
-
-// Health check endpoint - EB checks this
+// Health check endpoint - must be before routes for EB health checks
 app.get('/health', async (req: Request, res: Response) => {
   // Check Redis status
   let redisStatus = 'unknown';
@@ -210,7 +205,7 @@ app.get('/', (req: Request, res: Response) => {
   }
 });
 
-// Request logging middleware (before routes)
+// Request logging middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
   
@@ -230,6 +225,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+// Routes - MUST come before error handlers
+app.use('/api/driver', driverRoutes);
+app.use('/api/driver/s2', s2LocationIngest);
+app.use('/api/driver/testing', s2LocationIngestPublic);
+
+// Error handler - MUST come after all routes
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('❌ Unhandled error:', {
     message: err.message,
