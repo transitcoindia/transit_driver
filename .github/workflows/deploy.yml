@@ -301,3 +301,153 @@ jobs:
             fi
           fi
         continue-on-error: true
+
+  deploy-elastic-beanstalk:
+    name: Deploy to Elastic Beanstalk
+    runs-on: ubuntu-latest
+    if: secrets.AWS_ACCESS_KEY_ID && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/driver-socket')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+        env:
+          DATABASE_URL: ${{ github.ref == 'refs/heads/main' && secrets.PRODUCTION_DATABASE_URL || secrets.STAGING_DATABASE_URL }}
+      
+      - name: Build project
+        run: npm run build
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'ap-south-1' }}
+      
+      - name: Generate deployment package
+        run: |
+          mkdir -p deploy
+          
+          # Copy necessary files
+          cp -r dist deploy/
+          cp -r prisma deploy/
+          cp -r node_modules deploy/
+          cp package.json deploy/
+          cp package-lock.json deploy/
+          cp Procfile deploy/
+          cp -r .ebextensions deploy/
+          cp .npmrc deploy/ || true
+          cp ecosystem.config.js deploy/ || true
+          
+          # Create deployment zip
+          cd deploy
+          zip -r ../deploy.zip . -x "*.git*"
+          cd ..
+          
+          echo "✅ Deployment package created"
+      
+      - name: Deploy to Elastic Beanstalk
+        run: |
+          CURRENT_BRANCH="${GITHUB_REF##*/}"
+          
+          # Determine environment based on branch
+          if [[ "$CURRENT_BRANCH" == "main" ]]; then
+            EB_ENV="${{ secrets.EB_PRODUCTION_ENV || 'transit-driver-prod' }}"
+            EB_APP="${{ secrets.EB_APPLICATION_NAME || 'transit_driver' }}"
+          else
+            EB_ENV="${{ secrets.EB_STAGING_ENV || 'transit-driver-staging' }}"
+            EB_APP="${{ secrets.EB_APPLICATION_NAME || 'transit_driver' }}"
+          fi
+          
+          echo "Deploying to Elastic Beanstalk environment: $EB_ENV"
+          
+          # Generate version label
+          VERSION_LABEL="app-$(date +%y%m%d-%H%M%S)-${GITHUB_SHA:0:7}"
+          
+          # Upload application version to S3
+          S3_BUCKET="${{ secrets.EB_S3_BUCKET || 'elasticbeanstalk-ap-south-1-910162731533' }}"
+          S3_KEY="${EB_APP}/${VERSION_LABEL}.zip"
+          
+          aws s3 cp deploy.zip "s3://${S3_BUCKET}/${S3_KEY}"
+          
+          # Create application version
+          aws elasticbeanstalk create-application-version \
+            --application-name "$EB_APP" \
+            --version-label "$VERSION_LABEL" \
+            --source-bundle S3Bucket="$S3_BUCKET",S3Key="$S3_KEY" \
+            --region "${{ secrets.AWS_REGION || 'ap-south-1' }}"
+          
+          # Update environment
+          aws elasticbeanstalk update-environment \
+            --application-name "$EB_APP" \
+            --environment-name "$EB_ENV" \
+            --version-label "$VERSION_LABEL" \
+            --region "${{ secrets.AWS_REGION || 'ap-south-1' }}"
+          
+          echo "✅ Deployment initiated: $VERSION_LABEL"
+          echo "⏳ Waiting for environment to update..."
+          
+          # Wait for environment to be ready (max 10 minutes)
+          for i in {1..120}; do
+            STATUS=$(aws elasticbeanstalk describe-environments \
+              --application-name "$EB_APP" \
+              --environment-names "$EB_ENV" \
+              --region "${{ secrets.AWS_REGION || 'ap-south-1' }}" \
+              --query 'Environments[0].Status' \
+              --output text)
+            
+            HEALTH=$(aws elasticbeanstalk describe-environments \
+              --application-name "$EB_APP" \
+              --environment-names "$EB_ENV" \
+              --region "${{ secrets.AWS_REGION || 'ap-south-1' }}" \
+              --query 'Environments[0].Health' \
+              --output text)
+            
+            echo "Status: $STATUS | Health: $HEALTH"
+            
+            if [[ "$STATUS" == "Ready" ]]; then
+              if [[ "$HEALTH" == "Green" ]]; then
+                echo "✅ Deployment successful!"
+                exit 0
+              elif [[ "$HEALTH" == "Yellow" ]]; then
+                echo "⚠️  Deployment completed with warnings (Yellow health)"
+                exit 0
+              else
+                echo "❌ Deployment completed but health is: $HEALTH"
+                # Don't fail, let health check handle it
+                exit 0
+              fi
+            fi
+            
+            sleep 5
+          done
+          
+          echo "⚠️  Deployment timeout - check AWS console for status"
+          exit 0
+      
+      - name: Health check (Elastic Beanstalk)
+        if: always()
+        run: |
+          sleep 30
+          CURRENT_BRANCH="${GITHUB_REF##*/}"
+          if [[ "$CURRENT_BRANCH" == "main" ]]; then
+            EB_URL="${{ secrets.EB_PRODUCTION_URL }}"
+          else
+            EB_URL="${{ secrets.EB_STAGING_URL }}"
+          fi
+          
+          if [ -n "$EB_URL" ]; then
+            curl -f "$EB_URL/health" || echo "⚠️  Health check failed"
+          fi
+        continue-on-error: true

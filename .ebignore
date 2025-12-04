@@ -1,0 +1,64 @@
+# Git files
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Tests
+test/
+tests/
+__tests__/
+*.test.ts
+*.test.js
+*.spec.ts
+*.spec.js
+
+# Development files
+.vscode/
+.idea/
+*.log
+
+# Source files (we're deploying dist/)
+src/
+
+# CI/CD
+.github/
+
+# Environment files
+.env.example
+.env.local
+.env.development
+
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/config.yml
+
+# Scripts
+scripts/
+set-env-vars.sh
+set-env-vars.ps1
+fix-ec2-connect.sh
+
+# AWS config files
+aws-security-group-fix.json
+iam-policy-ec2-instance-connect.json
+
+# Build files (we include dist but not build artifacts)
+tsconfig.json
+jest.config.js
+
+# Docker (not needed for EB)
+Dockerfile
+.dockerignore
+
+# Large files
+bun.lock
+uploads/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
