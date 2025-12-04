@@ -16,7 +16,7 @@ import {
     getProfileCompletion,
     uploadProfileImage
 } from '../controllers/auth_controllers/authControllers';
-import  { submitVehicleInfo, uploadDocuments } from '../controllers/driver_detailes_controller/driverController'
+import  { submitVehicleInfo, uploadDocuments, uploadVehicleImages } from '../controllers/driver_detailes_controller/driverController'
 import { authenticate } from '../middleware/authMiddle';
 import { s2LocationIngest, s2LocationIngestPublic } from './locationIngest';
 import { limiter } from '../middleware/rateLimiter';
@@ -143,6 +143,32 @@ const profileImageUpload = multer({
     }
 }).single('profileImage'); // Single field named 'profileImage'
 
+// Configure multer for vehicle images (multiple fields)
+const vehicleImagesUpload = multer({
+    storage,
+    limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB per file
+        files: 11 // Maximum 11 files total (1 cover + 5 exterior + 5 interior)
+    },
+    fileFilter: (req: Request, file: any, cb: multer.FileFilterCallback) => {
+        console.log('Vehicle images upload - fileFilter:', {
+            originalname: file.originalname,
+            fieldname: file.fieldname,
+            mimetype: file.mimetype
+        });
+        // Allow only images
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed for vehicle images'));
+        }
+    }
+}).fields([
+    { name: 'coverImage', maxCount: 1 },
+    { name: 'exteriorImages', maxCount: 5 },
+    { name: 'interiorImages', maxCount: 5 }
+]);
+
 const router = express.Router();
 
 // Registration routes
@@ -187,6 +213,16 @@ router.post(
     documentUpload,
     handleMulterError,
     (uploadDocuments as unknown) as RequestHandler
+);
+
+// Vehicle images upload route
+router.post(
+    '/documents/vehicleImages',
+    (authenticate as unknown) as RequestHandler,
+    limiter,
+    vehicleImagesUpload,
+    handleMulterError,
+    (uploadVehicleImages as unknown) as RequestHandler
 );
 
 router.post(

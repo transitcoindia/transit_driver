@@ -34,7 +34,8 @@ export const uploadToS3 = async (
             Key: filename,
             Body: fileStream,
             ContentType: file.mimetype,
-            ACL: 'public-read' as const, // Make the file publicly accessible
+            // Remove ACL if bucket has "Block Public Access" enabled
+            // ACL: 'public-read' as const,
             Metadata: {
                 'x-amz-meta-uploaded-by': 'transit-app',
                 'x-amz-meta-document-type': file.originalname.split('.').pop() || '',
@@ -48,7 +49,14 @@ export const uploadToS3 = async (
         fs.unlinkSync(file.path);
 
         // Construct the URL based on the bucket name and region
-        return `https://${bucketName}.s3.amazonaws.com/${filename}`;
+        // For private buckets, you'll need to use CloudFront or presigned URLs
+        const cloudFrontUrl = process.env.AWS_CLOUDFRONT_URL;
+        if (cloudFrontUrl) {
+            return `${cloudFrontUrl}/${filename}`;
+        }
+        
+        // Fallback to standard S3 URL
+        return `https://${bucketName}.s3.${region}.amazonaws.com/${filename}`;
     } catch (error) {
         console.error('Error uploading file to S3:', error);
 

@@ -8,6 +8,7 @@ import AppError from '../../utils/AppError';
 import { uploadToS3 } from '../../utils/s3Upload';
 import { driverDocumentSchema, driverSignupSchema, driverVehicleInfoSchema } from '../../validator/driverValidation';
 import { sendDriverDocumentsNotificationEmail } from '../../utils/emailService';
+import path from 'path';
 
 export const submitVehicleInfo = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -29,6 +30,9 @@ export const submitVehicleInfo = async (req: Request, res: Response, next: NextF
             year,
             fuelType,
             seatingCapacity,
+            vehicleType,
+            location,
+            color,
             hasCNG,
             hasElectric,
             roofTop,
@@ -48,13 +52,15 @@ export const submitVehicleInfo = async (req: Request, res: Response, next: NextF
         const updatedDriverDetails = await prisma.driverDetails.upsert({
             where: { driverId },
             update: {
-                drivingExperience
+                drivingExperience,
+                city: location
             },
             create: {
                 driverId,
                 drivingExperience,
+                city: location,
                 isVerified: false,
-                licenseNumber: '' // Using empty string for now
+                licenseNumber: licenseNumber || '' // Using empty string if not provided
             }
         });
         
@@ -73,6 +79,8 @@ export const submitVehicleInfo = async (req: Request, res: Response, next: NextF
                     model: model,
                     year: year,
                     licensePlate: number,
+                    vehicleType: vehicleType,
+                    color: color || 'Not Specified',
                     fuelType: fuelType,
                     seatingCapacity: seatingCapacity,
                     hasCNG: hasCNG || false,
@@ -88,13 +96,14 @@ export const submitVehicleInfo = async (req: Request, res: Response, next: NextF
             });
         } else {
             // Create a new vehicle and assign to driver
-            const vehicleCount = await prisma.vehicle.count();
             vehicle = await prisma.vehicle.create({
                 data: {
                     make: brand,
                     model: model,
                     year: year,
                     licensePlate: number,
+                    vehicleType: vehicleType,
+                    color: color || 'Not Specified',
                     fuelType: fuelType,
                     seatingCapacity: seatingCapacity,
                     hasCNG: hasCNG || false,
@@ -104,8 +113,6 @@ export const submitVehicleInfo = async (req: Request, res: Response, next: NextF
                     insuranceExpiryDate: insuranceExpiryDate ? new Date(insuranceExpiryDate) : null,
                     registrationExpiryDate: registrationExpiryDate ? new Date(registrationExpiryDate) : null,
                     driverId: driverId,
-                    vehicleType: 'STANDARD', // Default vehicle type
-                    color: 'UNKNOWN', // Default color
                     isActive: true,
                     isAvailable: true,
                     isInService: true
@@ -423,6 +430,168 @@ async function checkRequiredDocumentsAndNotify(driverId: string, userEmail: stri
         return false;
     }
 }
+
+// Upload vehicle images (cover, exterior, interior)
+export const uploadVehicleImages = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const driverId = req.driver?.id;
+        
+        if (!driverId) {
+            return res.status(401).json({
+                status: 'fail',
+                message: 'Unauthorized'
+            });
+        }
+
+        console.log('Vehicle images upload request:', {
+            driverId,
+            files: req.files,
+            body: req.body
+        });
+
+        // Check if files were uploaded
+        if (!req.files || typeof req.files !== 'object') {
+            return next(new AppError('No images uploaded', 400));
+        }
+
+        const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+
+        // Validate minimum requirements
+        const coverImages = files['coverImage'] || [];
+        const exteriorImages = files['exteriorImages'] || [];
+        const interiorImages = files['interiorImages'] || [];
+
+        console.log('Image counts:', {
+            cover: coverImages.length,
+            exterior: exteriorImages.length,
+            interior: interiorImages.length
+        });
+
+        if (coverImages.length === 0) {
+            return next(new AppError('Cover image is required', 400));
+        }
+
+        if (exteriorImages.length < 3) {
+            return next(new AppError('At least 3 exterior images are required', 400));
+        }
+
+        if (interiorImages.length < 3) {
+            return next(new AppError('At least 3 interior images are required', 400));
+        }
+
+        // Check if driver has a vehicle
+        const vehicle = await prisma.vehicle.findUnique({
+            where: { driverId }
+        });
+
+        if (!vehicle) {
+            return next(new AppError('Please submit vehicle information first', 400));
+        }
+
+        const uploadResults = {
+            cover: [] as string[],
+            exterior: [] as string[],
+            interior: [] as string[]
+        };
+
+        // Upload cover image
+        console.log('Uploading cover image...');
+        for (const file of coverImages) {
+            try {
+                const url = await uploadToS3(file, 'vehicle-images/cover');
+                uploadResults.cover.push(url);
+                console.log('Cover image uploaded:', url);
+                
+                // Clean up temp file
+                if (fs.existsSync(file.path)) {
+                    fs.unlinkSync(file.path);
+                }
+            } catch (error) {
+                console.error('Error uploading cover image:', error);
+                throw error;
+            }
+        }
+
+        // Upload exterior images
+        console.log('Uploading exterior images...');
+        for (const file of exteriorImages) {
+            try {
+                const url = await uploadToS3(file, 'vehicle-images/exterior');
+                uploadResults.exterior.push(url);
+                console.log('Exterior image uploaded:', url);
+                
+                // Clean up temp file
+                if (fs.existsSync(file.path)) {
+                    fs.unlinkSync(file.path);
+                }
+            } catch (error) {
+                console.error('Error uploading exterior image:', error);
+                throw error;
+            }
+        }
+
+        // Upload interior images
+        console.log('Uploading interior images...');
+        for (const file of interiorImages) {
+            try {
+                const url = await uploadToS3(file, 'vehicle-images/interior');
+                uploadResults.interior.push(url);
+                console.log('Interior image uploaded:', url);
+                
+                // Clean up temp file
+                if (fs.existsSync(file.path)) {
+                    fs.unlinkSync(file.path);
+                }
+            } catch (error) {
+                console.error('Error uploading interior image:', error);
+                throw error;
+            }
+        }
+
+        // Update vehicle with image URLs
+        const updatedVehicle = await prisma.vehicle.update({
+            where: { id: vehicle.id },
+            data: {
+                vehicleImages: uploadResults
+            }
+        });
+
+        console.log('Vehicle images updated successfully');
+
+        return res.status(200).json({
+            status: 'success',
+            message: 'Vehicle images uploaded successfully',
+            data: {
+                vehicleId: updatedVehicle.id,
+                images: uploadResults,
+                counts: {
+                    cover: uploadResults.cover.length,
+                    exterior: uploadResults.exterior.length,
+                    interior: uploadResults.interior.length,
+                    total: uploadResults.cover.length + uploadResults.exterior.length + uploadResults.interior.length
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error uploading vehicle images:', error);
+        
+        // Clean up any uploaded files on error
+        if (req.files && typeof req.files === 'object') {
+            const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+            Object.values(files).flat().forEach((file: Express.Multer.File) => {
+                if (fs.existsSync(file.path)) {
+                    fs.unlinkSync(file.path);
+                }
+            });
+        }
+
+        if (error instanceof AppError) {
+            return next(error);
+        }
+        return next(new AppError(`Error uploading vehicle images: ${error instanceof Error ? error.message : 'Unknown error'}`, 500));
+    }
+};
 
 
 

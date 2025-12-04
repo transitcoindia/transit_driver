@@ -21,10 +21,16 @@ export const driverSignupSchema = z.object({
 export const driverVehicleInfoSchema = z.object({
     model: z.string().min(1, "Vehicle model is required"),
     brand: z.string().min(1, "Vehicle brand is required"),
-    number: z.string().min(1, "Vehicle number is required"),
+    number: z.string().min(1, "Vehicle number is required")
+        .regex(/^[A-Z]{2}\d{2}[A-Z]{0,2}\d{4}$/i, "Invalid vehicle number format. Use format: KA05AB1234"),
     year: z.number().int().min(1900).max(new Date().getFullYear() + 1),
     fuelType: z.string().min(1, "Fuel type is required"),
     seatingCapacity: z.number().int().min(1).max(50),
+    vehicleType: z.enum(['Auto', 'Bike', 'Car', 'SUV', 'E-Rickshaw'], {
+        errorMap: () => ({ message: "Vehicle type must be one of: Auto, Bike, Car, SUV, E-Rickshaw" })
+    }),
+    location: z.string().min(1, "Location is required"),
+    color: z.string().optional().default("Not Specified"),
     hasCNG: z.boolean().optional(),
     hasElectric: z.boolean().optional(),
     roofTop: z.boolean().optional(),
