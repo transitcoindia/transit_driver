@@ -21,9 +21,8 @@ jobs:
 
       - name: Check for package-lock.json
         id: check-lockfile
-        working-directory: ./transit_driver
         run: |
-          if [ -f "package-lock.json" ]; then
+          if [ -f "transit_driver/package-lock.json" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "✅ package-lock.json found - cache will be used"
           else
@@ -65,7 +64,7 @@ jobs:
         if: always()
         with:
           name: security-audit-results
-          path: audit-results.json
+          path: transit_driver/audit-results.json
           retention-days: 30
 
   code-scan:
