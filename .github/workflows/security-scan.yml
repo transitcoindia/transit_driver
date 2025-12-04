@@ -18,11 +18,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-
       - name: Check for package-lock.json
         id: check-lockfile
         run: |
-          if [ -f "transit_driver/package-lock.json" ]; then
+          if [ -f "package-lock.json" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "✅ package-lock.json found - cache will be used"
           else
@@ -36,7 +35,6 @@ jobs:
         with:
           node-version: '22.x'
           cache: 'npm'
-          cache-dependency-path: transit_driver/package-lock.json
       
       - name: Setup Node.js (without cache)
         if: steps.check-lockfile.outputs.exists != 'true'
@@ -45,16 +43,13 @@ jobs:
           node-version: '22.x'
       
       - name: Install dependencies
-        working-directory: ./transit_driver
         run: npm ci
       
       - name: Run npm audit
-        working-directory: ./transit_driver
         run: npm audit --audit-level=moderate
         continue-on-error: true
       
       - name: Check for known vulnerabilities
-        working-directory: ./transit_driver
         run: |
           npm audit --json > audit-results.json || true
           cat audit-results.json
@@ -64,7 +59,7 @@ jobs:
         if: always()
         with:
           name: security-audit-results
-          path: transit_driver/audit-results.json
+          path: audit-results.json
           retention-days: 30
 
   code-scan:
@@ -90,4 +85,5 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
         continue-on-error: true
+
 
