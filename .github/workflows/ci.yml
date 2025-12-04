@@ -2,7 +2,6 @@ name: CI Pipeline
 
 on:
   push:
-
     branches: [main, develop, staging, driver-socket]
   pull_request:
     branches: [main, develop, staging, driver-socket]
@@ -15,17 +14,15 @@ jobs:
     
     strategy:
       matrix:
-        node-version: [18.x, 20.x]
+        node-version: [20.x, 22.x]
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-<<<<<<< HEAD
-      - name: Setup Node.js ${{ matrix.node-version }}
-=======
       - name: Check for package-lock.json
         id: check-lockfile
+        working-directory: ./transit_driver
         run: |
           if [ -f "package-lock.json" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
@@ -37,22 +34,11 @@ jobs:
       
       - name: Setup Node.js ${{ matrix.node-version }} (with cache)
         if: steps.check-lockfile.outputs.exists == 'true'
->>>>>>> 603b46d129e205b9bf9f40ee065f279b547fad04
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-<<<<<<< HEAD
           cache-dependency-path: transit_driver/package-lock.json
-      
-      - name: Install dependencies
-        working-directory: ./transit_driver
-        run: npm ci
-      
-      - name: Generate Prisma Client
-        working-directory: ./transit_driver
-=======
-          cache-dependency-path: package-lock.json
       
       - name: Setup Node.js ${{ matrix.node-version }} (without cache)
         if: steps.check-lockfile.outputs.exists != 'true'
@@ -61,27 +47,22 @@ jobs:
           node-version: ${{ matrix.node-version }}
       
       - name: Install dependencies
+        working-directory: ./transit_driver
         run: npm ci
       
       - name: Generate Prisma Client
->>>>>>> 603b46d129e205b9bf9f40ee065f279b547fad04
+        working-directory: ./transit_driver
         run: npm run prisma:generate
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://user:password@localhost:5432/test' }}
       
       - name: Run ESLint
-<<<<<<< HEAD
         working-directory: ./transit_driver
-=======
->>>>>>> 603b46d129e205b9bf9f40ee065f279b547fad04
         run: npm run lint
         continue-on-error: true
       
       - name: Run tests
-<<<<<<< HEAD
         working-directory: ./transit_driver
-=======
->>>>>>> 603b46d129e205b9bf9f40ee065f279b547fad04
         run: npm test
         env:
           NODE_ENV: test
@@ -91,32 +72,21 @@ jobs:
           JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET || 'test-refresh-secret' }}
       
       - name: Build project
-<<<<<<< HEAD
         working-directory: ./transit_driver
-=======
->>>>>>> 603b46d129e205b9bf9f40ee065f279b547fad04
         run: npm run build
       
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
-        if: matrix.node-version == '20.x'
+        if: matrix.node-version == '22.x'
         with:
           name: dist-${{ github.sha }}
-<<<<<<< HEAD
           path: transit_driver/dist
-=======
-          path: dist
->>>>>>> 603b46d129e205b9bf9f40ee065f279b547fad04
           retention-days: 7
 
   build-docker:
     name: Build Docker Image
     runs-on: ubuntu-latest
-<<<<<<< HEAD
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-=======
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/driver-socket')
->>>>>>> 603b46d129e205b9bf9f40ee065f279b547fad04
     
     steps:
       - name: Checkout code
@@ -134,10 +104,7 @@ jobs:
         continue-on-error: true
       
       - name: Build Docker image
-<<<<<<< HEAD
         working-directory: ./transit_driver
-=======
->>>>>>> 603b46d129e205b9bf9f40ee065f279b547fad04
         run: |
           docker build -t driver-backend:${{ github.sha }} .
           docker tag driver-backend:${{ github.sha }} driver-backend:latest

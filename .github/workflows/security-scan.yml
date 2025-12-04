@@ -21,6 +21,7 @@ jobs:
 
       - name: Check for package-lock.json
         id: check-lockfile
+        working-directory: ./transit_driver
         run: |
           if [ -f "package-lock.json" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
@@ -34,23 +35,27 @@ jobs:
         if: steps.check-lockfile.outputs.exists == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '22.x'
           cache: 'npm'
+          cache-dependency-path: transit_driver/package-lock.json
       
       - name: Setup Node.js (without cache)
         if: steps.check-lockfile.outputs.exists != 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '22.x'
       
       - name: Install dependencies
+        working-directory: ./transit_driver
         run: npm ci
       
       - name: Run npm audit
+        working-directory: ./transit_driver
         run: npm audit --audit-level=moderate
         continue-on-error: true
       
       - name: Check for known vulnerabilities
+        working-directory: ./transit_driver
         run: |
           npm audit --json > audit-results.json || true
           cat audit-results.json
