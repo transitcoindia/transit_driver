@@ -6,526 +6,206 @@ on:
       - main
       - develop
       - driver-socket
+
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment to deploy to'
-        required: true
-        default: 'staging'
-        type: choice
-        options:
-          - staging
-          - production
 
 jobs:
-  deploy-staging:
-    name: Deploy to Staging
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/driver-socket' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
-    environment:
-      name: staging
-      url: ${{ steps.deploy.outputs.url }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.x'
-          cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Generate Prisma Client
-        run: npm run prisma:generate
-        env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-      
-      - name: Run database migrations
-        run: npm run prisma:migrate
-        env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-        continue-on-error: true
-      
-      - name: Build project
-        run: npm run build
-      
-      - name: Deploy to Render (Staging)
-        id: deploy
-        if: secrets.RENDER_API_KEY
-        uses: johnbeynon/render-deploy@v0.0.15
-        with:
-          service-id: ${{ secrets.RENDER_STAGING_SERVICE_ID }}
-          api-key: ${{ secrets.RENDER_API_KEY }}
-        continue-on-error: true
-      
-      - name: Deploy to Railway (Staging)
-        if: secrets.RAILWAY_TOKEN
-        run: |
-          npm install -g @railway/cli
-          railway login --token ${{ secrets.RAILWAY_TOKEN }}
-          railway up --service ${{ secrets.RAILWAY_STAGING_SERVICE_ID }}
-        continue-on-error: true
-      
-      - name: Health check
-        run: |
-          sleep 30
-          curl -f ${{ secrets.STAGING_URL }}/health || exit 1
-        continue-on-error: true
 
-  deploy-production:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
-    environment:
-      name: production
-      url: ${{ steps.deploy.outputs.url }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.x'
-          cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Generate Prisma Client
-        run: npm run prisma:generate
-        env:
-          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-      
-      - name: Run database migrations
-        run: npm run prisma:migrate
-        env:
-          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-      
-      - name: Build project
-        run: npm run build
-      
-      - name: Deploy to Render (Production)
-        id: deploy
-        if: secrets.RENDER_API_KEY
-        uses: johnbeynon/render-deploy@v0.0.15
-        with:
-          service-id: ${{ secrets.RENDER_PRODUCTION_SERVICE_ID }}
-          api-key: ${{ secrets.RENDER_API_KEY }}
-        continue-on-error: true
-      
-      - name: Deploy to Railway (Production)
-        if: secrets.RAILWAY_TOKEN
-        run: |
-          npm install -g @railway/cli
-          railway login --token ${{ secrets.RAILWAY_TOKEN }}
-          railway up --service ${{ secrets.RAILWAY_PRODUCTION_SERVICE_ID }}
-        continue-on-error: true
-      
-      - name: Health check
-        run: |
-          sleep 30
-          curl -f ${{ secrets.PRODUCTION_URL }}/health || exit 1
-      
-      - name: Notify deployment
-        if: always()
-        run: |
-          echo "Deployment to production ${{ job.status }}"
-          # Add notification logic here (Slack, Discord, email, etc.)
-
-  deploy-ec2:
+  #######################################################################
+  # 1) Deploy to EC2 (runs on ALL 3 branches depending on config)
+  #######################################################################
+  deploy-to-ec2:
     name: Deploy to EC2
     runs-on: ubuntu-latest
-    if: secrets.AWS_ACCESS_KEY_ID
-    env:
-      APP_DIR: ${{ secrets.EC2_APP_DIRECTORY || '/home/ec2-user/transit_driver' }}
-      REGION: ${{ secrets.AWS_REGION || 'ap-south-1' }}
+    if: secrets.AWS_ACCESS_KEY_ID && (
+         github.ref == 'refs/heads/develop' ||
+         github.ref == 'refs/heads/main' ||
+         github.ref == 'refs/heads/driver-socket'
+       )
 
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22.x"
-          cache: "npm"
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: npm ci
 
-      - name: Prisma Generate
-        run: npm run prisma:generate
-        env:
-          DATABASE_URL: ${{ github.ref == 'refs/heads/main' && secrets.PRODUCTION_DATABASE_URL || secrets.STAGING_DATABASE_URL }}
-
-      - name: Run Prisma Migrations
-        run: npm run prisma:migrate || true
-        env:
-          DATABASE_URL: ${{ github.ref == 'refs/heads/main' && secrets.PRODUCTION_DATABASE_URL || secrets.STAGING_DATABASE_URL }}
-
-      - name: Build Project
+      - name: Build project
         run: npm run build
+
+      - name: Determine EC2 target
+        id: ec2-target
+        run: |
+          BRANCH="${GITHUB_REF##*/}"
+
+          if [[ "$BRANCH" == "main" ]]; then
+            echo "instance=${{ secrets.EC2_PRODUCTION_INSTANCE_ID }}" >> $GITHUB_OUTPUT
+            echo "host=${{ secrets.EC2_PRODUCTION_HOST }}" >> $GITHUB_OUTPUT
+          else
+            echo "instance=${{ secrets.EC2_STAGING_INSTANCE_ID }}" >> $GITHUB_OUTPUT
+            echo "host=${{ secrets.EC2_STAGING_HOST }}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION || 'ap-south-1' }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Deploy to EC2 via SSM (Auto detect environment)
+      - name: Deploy to EC2 via SSM
         run: |
-          echo "🚀 Starting deployment to EC2 via SSM..."
+          INSTANCE="${{ steps.ec2-target.outputs.instance }}"
+          APP_DIR="${{ secrets.EC2_APP_DIRECTORY }}"
 
-          # Determine environment and branch based on current branch
-          CURRENT_BRANCH="${GITHUB_REF##*/}"
-          
-          if [[ "$CURRENT_BRANCH" == "main" ]]; then
-            INSTANCE_ID="${{ secrets.EC2_PRODUCTION_INSTANCE_ID }}"
-            BRANCH="main"
-            ENV_NAME="PRODUCTION"
-            DATABASE_URL="${{ secrets.PRODUCTION_DATABASE_URL }}"
-          elif [[ "$CURRENT_BRANCH" == "driver-socket" ]] || [[ "$CURRENT_BRANCH" == "develop" ]]; then
-            INSTANCE_ID="${{ secrets.EC2_STAGING_INSTANCE_ID }}"
-            BRANCH="$CURRENT_BRANCH"
-            ENV_NAME="STAGING"
-            DATABASE_URL="${{ secrets.STAGING_DATABASE_URL }}"
-          else
-            INSTANCE_ID="${{ secrets.EC2_STAGING_INSTANCE_ID }}"
-            BRANCH="$CURRENT_BRANCH"
-            ENV_NAME="STAGING"
-            DATABASE_URL="${{ secrets.STAGING_DATABASE_URL }}"
-          fi
-
-          echo "Environment: $ENV_NAME"
-          echo "Branch: $BRANCH"
-          echo "Instance ID: $INSTANCE_ID"
-
-          if [ -z "$INSTANCE_ID" ]; then
-            echo "⚠️  No EC2 instance ID configured for this branch. Skipping EC2 deployment."
-            exit 0
-          fi
-
-          # Send deployment command via SSM
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
+          aws ssm send-command \
             --document-name "AWS-RunShellScript" \
+            --instance-ids "$INSTANCE" \
             --parameters commands="[
-              'set -e',
               'cd $APP_DIR',
-              'echo \"🔄 Updating code from GitHub (branch: $BRANCH)\"',
-              'git fetch origin',
-              'git checkout $BRANCH || git checkout -b $BRANCH origin/$BRANCH',
-              'git pull origin $BRANCH',
-              'echo \"📦 Installing dependencies...\"',
+              'git pull',
               'npm ci --production',
-              'echo \"🔑 Generating Prisma client...\"',
-              'npm run prisma:generate',
-              'echo \"🗄️  Running database migrations...\"',
-              'npm run prisma:migrate || true',
-              'echo \"🔨 Building project...\"',
               'npm run build',
-              'echo \"🚀 Restarting application...\"',
-              'if command -v pm2 &> /dev/null; then',
-              '  if [ -f ecosystem.config.js ]; then',
-              '    pm2 restart transit-driver || pm2 start ecosystem.config.js --update-env',
-              '  else',
-              '    pm2 restart transit-driver || pm2 start dist/app.js --name transit-driver --update-env',
-              '  fi',
-              'else',
-              '  nohup node dist/app.js > app.log 2>&1 &',
-              'fi',
-              'echo \"✅ Deployment successful\"'
-            ]" \
-            --region "$REGION" \
-            --query "Command.CommandId" \
-            --output text)
+              'pm2 restart transit-driver || pm2 start dist/app.js --name transit-driver'
+            ]"
 
-          echo "⏳ Waiting for command to complete... (ID: $COMMAND_ID)"
-
-          # Wait for command to complete (max 5 minutes)
-          for i in {1..60}; do
-            STATUS=$(aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" \
-              --instance-id "$INSTANCE_ID" \
-              --region "$REGION" \
-              --query 'Status' \
-              --output text 2>/dev/null || echo "InProgress")
-
-            if [[ "$STATUS" == "Success" ]]; then
-              echo "✅ Deployment Complete"
-              # Show output
-              aws ssm get-command-invocation \
-                --command-id "$COMMAND_ID" \
-                --instance-id "$INSTANCE_ID" \
-                --region "$REGION" \
-                --query "StandardOutputContent" \
-                --output text
-              exit 0
-            elif [[ "$STATUS" == "Failed" ]] || [[ "$STATUS" == "Cancelled" ]]; then
-              echo "❌ Deployment Failed"
-              # Show error output
-              aws ssm get-command-invocation \
-                --command-id "$COMMAND_ID" \
-                --instance-id "$INSTANCE_ID" \
-                --region "$REGION" \
-                --query "StandardErrorContent" \
-                --output text
-              exit 1
-            fi
-
-            sleep 5
-          done
-
-          echo "❌ Deployment Timeout after 5 minutes"
-          exit 1
-
-      - name: Health check (EC2)
-        if: always()
-        run: |
-          sleep 30
-          CURRENT_BRANCH="${GITHUB_REF##*/}"
-          if [[ "$CURRENT_BRANCH" == "main" ]]; then
-            if [ -n "${{ secrets.EC2_PRODUCTION_HOST }}" ]; then
-              curl -f http://${{ secrets.EC2_PRODUCTION_HOST }}/health || echo "⚠️  Health check failed"
-            fi
-          else
-            if [ -n "${{ secrets.EC2_STAGING_HOST }}" ]; then
-              curl -f http://${{ secrets.EC2_STAGING_HOST }}/health || echo "⚠️  Health check failed"
-            fi
-          fi
-        continue-on-error: true
-
-  deploy-elastic-beanstalk:
-    name: Deploy to Elastic Beanstalk
+  #######################################################################
+  # 2) Elastic Beanstalk Deployment (Staging) → driver-socket branch
+  #######################################################################
+  eb-staging:
+    name: Deploy EB Staging
     runs-on: ubuntu-latest
-    if: secrets.AWS_ACCESS_KEY_ID && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/driver-socket')
-    
+    if: secrets.AWS_ACCESS_KEY_ID && github.ref == 'refs/heads/driver-socket'
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.x'
-          cache: 'npm'
-      
+          node-version: "22.x"
+
       - name: Install dependencies
         run: npm ci
-      
-      - name: Generate Prisma Client
-        run: npm run prisma:generate
-        env:
-          DATABASE_URL: ${{ github.ref == 'refs/heads/main' && secrets.PRODUCTION_DATABASE_URL || secrets.STAGING_DATABASE_URL }}
-      
+
       - name: Build project
         run: npm run build
-      
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION || 'ap-south-1' }}
-      
-      - name: Generate deployment package
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Package app for EB
         run: |
-          mkdir -p deploy
-          
-          # Copy necessary files
+          mkdir deploy
           cp -r dist deploy/
-          cp -r prisma deploy/
-          cp -r node_modules deploy/
-          cp package.json deploy/
-          cp package-lock.json deploy/
-          cp Procfile deploy/
           cp -r .ebextensions deploy/
-          cp .npmrc deploy/ || true
-          cp ecosystem.config.js deploy/ || true
-          
-          # Create deployment zip
+          cp package.json package-lock.json deploy/
+          cp Procfile deploy/ || true
           cd deploy
-          zip -r ../deploy.zip . -x "*.git*"
+          zip -r ../deploy.zip .
           cd ..
-          
-          echo "✅ Deployment package created"
-      
-✅ STEP 4 — Increase Timeout (EB kills app too early)
 
-Create:
-
-.ebextensions/01-timeout.config
-
-
-Add:
-
-option_settings:
-  aws:elasticbeanstalk:command:
-    timeout: 600      - name: Update Elastic Beanstalk Platform
+      - name: Upload to EB + Release
         run: |
-          CURRENT_BRANCH="${GITHUB_REF##*/}"
-          
-          # Determine environment based on branch
-          if [[ "$CURRENT_BRANCH" == "main" ]]; then
-            EB_ENV="${{ secrets.EB_PRODUCTION_ENV || 'transit-driver-prod' }}"
-            EB_APP="${{ secrets.EB_APPLICATION_NAME || 'transit_driver' }}"
-          else
-            EB_ENV="${{ secrets.EB_STAGING_ENV || 'transit-driver-staging' }}"
-            EB_APP="${{ secrets.EB_APPLICATION_NAME || 'transit_driver' }}"
-          fi
-          
-          echo "🔄 Checking platform version for environment: $EB_ENV"
-          
-          # Get current platform version
-          CURRENT_PLATFORM=$(aws elasticbeanstalk describe-environments \
-            --application-name "$EB_APP" \
-            --environment-names "$EB_ENV" \
-            --region "${{ secrets.AWS_REGION || 'ap-south-1' }}" \
-            --query 'Environments[0].PlatformArn' \
-            --output text)
-          
-          echo "Current platform: $CURRENT_PLATFORM"
-          
-          # Get latest recommended platform for Node.js 22 on AL2023
-          LATEST_PLATFORM=$(aws elasticbeanstalk list-platform-versions \
-            --region "${{ secrets.AWS_REGION || 'ap-south-1' }}" \
-            --filters Type=PlatformName,Operator="=",Values="Node.js 22 running on 64bit Amazon Linux 2023" \
-            --query 'PlatformSummaryList[?PlatformLifecycleState==`Recommended`] | [0].PlatformArn' \
-            --output text)
-          
-          echo "Latest recommended platform: $LATEST_PLATFORM"
-          
-          # Update platform if different
-          if [[ "$CURRENT_PLATFORM" != "$LATEST_PLATFORM" ]] && [[ -n "$LATEST_PLATFORM" ]]; then
-            echo "📦 Updating platform to latest recommended version..."
-            aws elasticbeanstalk update-environment \
-              --application-name "$EB_APP" \
-              --environment-name "$EB_ENV" \
-              --platform-arn "$LATEST_PLATFORM" \
-              --region "${{ secrets.AWS_REGION || 'ap-south-1' }}"
-            
-            echo "⏳ Waiting for platform update to complete..."
-            
-            # Wait for platform update to complete (max 15 minutes)
-            for i in {1..180}; do
-              STATUS=$(aws elasticbeanstalk describe-environments \
-                --application-name "$EB_APP" \
-                --environment-names "$EB_ENV" \
-                --region "${{ secrets.AWS_REGION || 'ap-south-1' }}" \
-                --query 'Environments[0].Status' \
-                --output text)
-              
-              if [[ "$STATUS" == "Ready" ]]; then
-                echo "✅ Platform update complete!"
-                break
-              fi
-              
-              echo "Status: $STATUS - waiting..."
-              sleep 5
-            done
-          else
-            echo "✅ Platform is already on the latest recommended version"
-          fi
-        continue-on-error: false
-      
-      - name: Deploy to Elastic Beanstalk
-        run: |
-          CURRENT_BRANCH="${GITHUB_REF##*/}"
-          
-          # Determine environment based on branch
-          if [[ "$CURRENT_BRANCH" == "main" ]]; then
-            EB_ENV="${{ secrets.EB_PRODUCTION_ENV || 'transit-driver-prod' }}"
-            EB_APP="${{ secrets.EB_APPLICATION_NAME || 'transit_driver' }}"
-          else
-            EB_ENV="${{ secrets.EB_STAGING_ENV || 'transit-driver-staging' }}"
-            EB_APP="${{ secrets.EB_APPLICATION_NAME || 'transit_driver' }}"
-          fi
-          
-          echo "Deploying to Elastic Beanstalk environment: $EB_ENV"
-          
-          # Generate version label
-          VERSION_LABEL="app-$(date +%y%m%d-%H%M%S)-${GITHUB_SHA:0:7}"
-          
-          # Upload application version to S3
-          S3_BUCKET="${{ secrets.EB_S3_BUCKET || 'elasticbeanstalk-ap-south-1-910162731533' }}"
-          S3_KEY="${EB_APP}/${VERSION_LABEL}.zip"
-          
-          aws s3 cp deploy.zip "s3://${S3_BUCKET}/${S3_KEY}"
-          
-          # Create application version
+          APP="${{ secrets.EB_APPLICATION_NAME }}"
+          ENV="${{ secrets.EB_STAGING_ENV }}"
+          BUCKET="${{ secrets.EB_S3_BUCKET }}"
+          VERSION="staging-$(date +%Y%m%d-%H%M%S)"
+
+          aws s3 cp deploy.zip s3://$BUCKET/$VERSION.zip
+
           aws elasticbeanstalk create-application-version \
-            --application-name "$EB_APP" \
-            --version-label "$VERSION_LABEL" \
-            --source-bundle S3Bucket="$S3_BUCKET",S3Key="$S3_KEY" \
-            --region "${{ secrets.AWS_REGION || 'ap-south-1' }}"
-          
-          # Update environment
+            --application-name "$APP" \
+            --version-label "$VERSION" \
+            --source-bundle S3Bucket="$BUCKET",S3Key="$VERSION.zip"
+
           aws elasticbeanstalk update-environment \
-            --application-name "$EB_APP" \
-            --environment-name "$EB_ENV" \
-            --version-label "$VERSION_LABEL" \
-            --region "${{ secrets.AWS_REGION || 'ap-south-1' }}"
-          
-          echo "✅ Deployment initiated: $VERSION_LABEL"
-          echo "⏳ Waiting for environment to update..."
-          
-          # Wait for environment to be ready (max 10 minutes)
-          for i in {1..120}; do
-            STATUS=$(aws elasticbeanstalk describe-environments \
-              --application-name "$EB_APP" \
-              --environment-names "$EB_ENV" \
-              --region "${{ secrets.AWS_REGION || 'ap-south-1' }}" \
-              --query 'Environments[0].Status' \
-              --output text)
-            
-            HEALTH=$(aws elasticbeanstalk describe-environments \
-              --application-name "$EB_APP" \
-              --environment-names "$EB_ENV" \
-              --region "${{ secrets.AWS_REGION || 'ap-south-1' }}" \
-              --query 'Environments[0].Health' \
-              --output text)
-            
-            echo "Status: $STATUS | Health: $HEALTH"
-            
-            if [[ "$STATUS" == "Ready" ]]; then
-              if [[ "$HEALTH" == "Green" ]]; then
-                echo "✅ Deployment successful!"
-                exit 0
-              elif [[ "$HEALTH" == "Yellow" ]]; then
-                echo "⚠️  Deployment completed with warnings (Yellow health)"
-                exit 0
-              else
-                echo "❌ Deployment completed but health is: $HEALTH"
-                # Don't fail, let health check handle it
-                exit 0
-              fi
-            fi
-            
-            sleep 5
-          done
-          
-          echo "⚠️  Deployment timeout - check AWS console for status"
-          exit 0
-      
-      - name: Health check (Elastic Beanstalk)
-        if: always()
+            --application-name "$APP" \
+            --environment-name "$ENV" \
+            --version-label "$VERSION"
+
+  #######################################################################
+  # 3) Elastic Beanstalk Deployment (Production) → main branch
+  #######################################################################
+  eb-prod:
+    name: Deploy EB Production
+    runs-on: ubuntu-latest
+    if: secrets.AWS_ACCESS_KEY_ID && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Package app for EB
         run: |
-          sleep 30
-          CURRENT_BRANCH="${GITHUB_REF##*/}"
-          if [[ "$CURRENT_BRANCH" == "main" ]]; then
-            EB_URL="${{ secrets.EB_PRODUCTION_URL }}"
-          else
-            EB_URL="${{ secrets.EB_STAGING_URL }}"
-          fi
-          
-          if [ -n "$EB_URL" ]; then
-            curl -f "$EB_URL/health" || echo "⚠️  Health check failed"
-          fi
-        continue-on-error: true
+          mkdir deploy
+          cp -r dist deploy/
+          cp package.json package-lock.json deploy/
+          cp -r .ebextensions deploy/
+          cp Procfile deploy/ || true
+          cd deploy
+          zip -r ../deploy.zip .
+          cd ..
+
+      - name: Upload & Deploy EB Prod
+        run: |
+          APP="${{ secrets.EB_APPLICATION_NAME }}"
+          ENV="${{ secrets.EB_PRODUCTION_ENV }}"
+          BUCKET="${{ secrets.EB_S3_BUCKET }}"
+          VERSION="prod-$(date +%Y%m%d-%H%M%S)"
+
+          aws s3 cp deploy.zip s3://$BUCKET/$VERSION.zip
+
+          aws elasticbeanstalk create-application-version \
+            --application-name "$APP" \
+            --version-label "$VERSION" \
+            --source-bundle S3Bucket="$BUCKET",S3Key="$VERSION.zip"
+
+          aws elasticbeanstalk update-environment \
+            --environment-name "$ENV" \
+            --version-label "$VERSION"
+
+  #######################################################################
+  # 4) Render Deploy (Only on driver-socket)
+  #######################################################################
+  render-deploy:
+    name: Deploy Render (driver-socket)
+    runs-on: ubuntu-latest
+    if: secrets.RENDER_API_KEY && github.ref == 'refs/heads/driver-socket'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Render
+        uses: johnbeynon/render-deploy@v0.0.15
+        with:
+          service-id: ${{ secrets.RENDER_STAGING_SERVICE_ID }}
+          api-key: ${{ secrets.RENDER_API_KEY }}
