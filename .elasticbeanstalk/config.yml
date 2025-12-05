@@ -2,6 +2,10 @@ branch-defaults:
   driver-socket:
     environment: transit-driver-prod
     group_suffix: null
+environment-defaults:
+  transit-driver-prod:
+    branch: null
+    repository: null
 global:
   application_name: transit_driver
   branch: null
@@ -11,8 +15,8 @@ global:
   include_git_submodules: true
   instance_profile: null
   platform_name: null
-  platform_version: null
-  profile: transit-prod
+  platform_version: 6.7.2
+  profile: null
   repository: null
   sc: git
   workspace_type: Application

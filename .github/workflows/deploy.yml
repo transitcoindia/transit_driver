@@ -357,6 +357,73 @@ jobs:
           
           echo "✅ Deployment package created"
       
+      - name: Update Elastic Beanstalk Platform
+        run: |
+          CURRENT_BRANCH="${GITHUB_REF##*/}"
+          
+          # Determine environment based on branch
+          if [[ "$CURRENT_BRANCH" == "main" ]]; then
+            EB_ENV="${{ secrets.EB_PRODUCTION_ENV || 'transit-driver-prod' }}"
+            EB_APP="${{ secrets.EB_APPLICATION_NAME || 'transit_driver' }}"
+          else
+            EB_ENV="${{ secrets.EB_STAGING_ENV || 'transit-driver-staging' }}"
+            EB_APP="${{ secrets.EB_APPLICATION_NAME || 'transit_driver' }}"
+          fi
+          
+          echo "🔄 Checking platform version for environment: $EB_ENV"
+          
+          # Get current platform version
+          CURRENT_PLATFORM=$(aws elasticbeanstalk describe-environments \
+            --application-name "$EB_APP" \
+            --environment-names "$EB_ENV" \
+            --region "${{ secrets.AWS_REGION || 'ap-south-1' }}" \
+            --query 'Environments[0].PlatformArn' \
+            --output text)
+          
+          echo "Current platform: $CURRENT_PLATFORM"
+          
+          # Get latest recommended platform for Node.js 22 on AL2023
+          LATEST_PLATFORM=$(aws elasticbeanstalk list-platform-versions \
+            --region "${{ secrets.AWS_REGION || 'ap-south-1' }}" \
+            --filters Type=PlatformName,Operator="=",Values="Node.js 22 running on 64bit Amazon Linux 2023" \
+            --query 'PlatformSummaryList[?PlatformLifecycleState==`Recommended`] | [0].PlatformArn' \
+            --output text)
+          
+          echo "Latest recommended platform: $LATEST_PLATFORM"
+          
+          # Update platform if different
+          if [[ "$CURRENT_PLATFORM" != "$LATEST_PLATFORM" ]] && [[ -n "$LATEST_PLATFORM" ]]; then
+            echo "📦 Updating platform to latest recommended version..."
+            aws elasticbeanstalk update-environment \
+              --application-name "$EB_APP" \
+              --environment-name "$EB_ENV" \
+              --platform-arn "$LATEST_PLATFORM" \
+              --region "${{ secrets.AWS_REGION || 'ap-south-1' }}"
+            
+            echo "⏳ Waiting for platform update to complete..."
+            
+            # Wait for platform update to complete (max 15 minutes)
+            for i in {1..180}; do
+              STATUS=$(aws elasticbeanstalk describe-environments \
+                --application-name "$EB_APP" \
+                --environment-names "$EB_ENV" \
+                --region "${{ secrets.AWS_REGION || 'ap-south-1' }}" \
+                --query 'Environments[0].Status' \
+                --output text)
+              
+              if [[ "$STATUS" == "Ready" ]]; then
+                echo "✅ Platform update complete!"
+                break
+              fi
+              
+              echo "Status: $STATUS - waiting..."
+              sleep 5
+            done
+          else
+            echo "✅ Platform is already on the latest recommended version"
+          fi
+        continue-on-error: false
+      
       - name: Deploy to Elastic Beanstalk
         run: |
           CURRENT_BRANCH="${GITHUB_REF##*/}"
