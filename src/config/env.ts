@@ -69,4 +69,16 @@ export const CHANNELS = {
   RIDE_STATUS_UPDATES: 'ride_status_updates'
 } as const;
 
+// AWS S3 Configuration
+// When running on AWS Elastic Beanstalk or EC2 with instance profile,
+// credentials are automatically picked up from the instance metadata service
+export const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
+export const AWS_S3_BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || 'transit-driver-documents-shankhtech';
+
+// Optional: Custom S3 endpoint for local development (MinIO, LocalStack, etc.)
+export const AWS_S3_ENDPOINT = process.env.AWS_S3_ENDPOINT;
+
+// Optional: CloudFront URL for serving private content
+export const AWS_CLOUDFRONT_URL = process.env.AWS_CLOUDFRONT_URL;
+
 

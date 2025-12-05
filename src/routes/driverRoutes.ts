@@ -23,7 +23,18 @@ import { limiter } from '../middleware/rateLimiter';
 import { NextFunction, Request, Response } from 'express';
 import { storeDriverRideDetails, startRideWithCode, endRide } from '../controllers/driver_detailes_controller/driverRides_Controller';
 import { activateSubscription } from '../controllers/driver_status/driverStatusController';
-// import { documentUpload, uploadLimiter } from '../middleware/uploadMiddleware';
+import { 
+    generateUploadUrl, 
+    confirmUpload, 
+    generateBatchUploadUrls, 
+    batchConfirmUploads 
+} from '../controllers/driver_detailes_controller/s3UploadController';
+import {
+    submitAllDocuments,
+    getDocumentStatus,
+    requestDocumentUploadUrls
+} from '../controllers/driver_detailes_controller/driverDocumentsController';
+// import { documentUpload, uploadLimiter} from '../middleware/uploadMiddleware';
 
 
 const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -229,6 +240,56 @@ router.post(
     '/subscription/activate',
     authenticate as RequestHandler,
     activateSubscription as any
+);
+
+// S3 Presigned URL Upload Routes (New Flow)
+// Client requests presigned URL, uploads directly to S3, then confirms
+router.post(
+    '/upload-url',
+    (authenticate as unknown) as RequestHandler,
+    limiter,
+    (generateUploadUrl as unknown) as RequestHandler
+);
+
+router.post(
+    '/confirm-upload',
+    (authenticate as unknown) as RequestHandler,
+    (confirmUpload as unknown) as RequestHandler
+);
+
+// Batch upload endpoints for multiple files
+router.post(
+    '/batch-upload-urls',
+    (authenticate as unknown) as RequestHandler,
+    limiter,
+    (generateBatchUploadUrls as unknown) as RequestHandler
+);
+
+router.post(
+    '/batch-confirm-uploads',
+    (authenticate as unknown) as RequestHandler,
+    (batchConfirmUploads as unknown) as RequestHandler
+);
+
+// Flutter Driver Documents Screen API Endpoints
+// These endpoints handle the complete driver documents submission from mobile app
+router.post(
+    '/documents/request-upload-urls',
+    (authenticate as unknown) as RequestHandler,
+    limiter,
+    (requestDocumentUploadUrls as unknown) as RequestHandler
+);
+
+router.post(
+    '/documents/submit-all',
+    (authenticate as unknown) as RequestHandler,
+    (submitAllDocuments as unknown) as RequestHandler
+);
+
+router.get(
+    '/documents/status',
+    (authenticate as unknown) as RequestHandler,
+    (getDocumentStatus as unknown) as RequestHandler
 );
 
 export default router;
