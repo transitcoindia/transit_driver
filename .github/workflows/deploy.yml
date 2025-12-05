@@ -357,7 +357,18 @@ jobs:
           
           echo "✅ Deployment package created"
       
-      - name: Update Elastic Beanstalk Platform
+✅ STEP 4 — Increase Timeout (EB kills app too early)
+
+Create:
+
+.ebextensions/01-timeout.config
+
+
+Add:
+
+option_settings:
+  aws:elasticbeanstalk:command:
+    timeout: 600      - name: Update Elastic Beanstalk Platform
         run: |
           CURRENT_BRANCH="${GITHUB_REF##*/}"
           
