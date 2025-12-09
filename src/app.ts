@@ -301,7 +301,9 @@ process.on('uncaughtException', (error: Error) => {
   // In production, you might want to exit gracefully here
 });
 
-const PORT = DRIVER_PORT;
+// Use Elastic Beanstalk PORT environment variable, fallback to DRIVER_PORT or 3000
+// Convert to number since process.env.PORT is a string
+const PORT: number = process.env.PORT ? parseInt(process.env.PORT, 10) : (DRIVER_PORT || 3000);
 
 // Graceful shutdown handlers
 process.on('SIGTERM', async () => {
@@ -352,12 +354,14 @@ process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
   // Don't exit - log and continue
 });
 
-httpServer.listen(PORT, () => {
-  console.log(`🚀 Driver backend server running on http://localhost:${PORT}`);
-  console.log(`🔌 WebSocket server: ws://localhost:${PORT}${SOCKET_IO_PATH}`);
-  console.log(`📊 Health check: http://localhost:${PORT}/health`);
+// Bind to 0.0.0.0 to accept connections from all interfaces (required for Elastic Beanstalk)
+// This ensures the server listens on IPv4 instead of defaulting to IPv6 (::) on Amazon Linux 2023
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Driver backend server running on 0.0.0.0:${PORT}`);
+  console.log(`🔌 WebSocket server: ws://0.0.0.0:${PORT}${SOCKET_IO_PATH}`);
+  console.log(`📊 Health check: http://0.0.0.0:${PORT}/health`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📘 Swagger docs: http://localhost:${PORT}/api-docs`);
+  console.log(`📘 Swagger docs: http://0.0.0.0:${PORT}/api-docs`);
   console.log(`\n✅ Server started successfully!\n`);
 });
 

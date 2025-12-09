@@ -26,6 +26,9 @@ FROM node:22-alpine AS production
 
 WORKDIR /app
 
+# Allow runtime override of the port (Elastic Beanstalk provides PORT)
+ENV PORT=3000
+
 # Install only production dependencies
 COPY package*.json ./
 RUN npm ci --only=production && npm cache clean --force
@@ -45,12 +48,12 @@ RUN addgroup -g 1001 -S nodejs && \
 RUN chown -R nodejs:nodejs /app
 USER nodejs
 
-# Expose port
-EXPOSE 3000
+# Expose configured port
+EXPOSE $PORT
 
-# Health check
+# Health check uses the runtime PORT environment variable
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+  CMD node -e "const p = process.env.PORT || 3000; require('http').get(`http://localhost:${p}/health`, (r) => { process.exit(r.statusCode === 200 ? 0 : 1) })"
 
 # Start application
 CMD ["node", "dist/app.js"]
