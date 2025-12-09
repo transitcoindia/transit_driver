@@ -273,10 +273,44 @@ router.post(
 
 // Flutter Driver Documents Screen API Endpoints
 // These endpoints handle the complete driver documents submission from mobile app
+// Configure multer for document uploads (supports multipart/form-data)
+const documentFilesUpload = multer({
+    storage: multer.memoryStorage(), // Use memory storage since we're just getting metadata
+    limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB file size limit
+    },
+    fileFilter: (req: Request, file: any, cb: multer.FileFilterCallback) => {
+        // Allow only images and PDFs
+        const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+        if (allowedMimeTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error(`Invalid file type. Only ${allowedMimeTypes.join(', ')} are allowed.`));
+        }
+    }
+}).fields([
+    { name: 'aadhar', maxCount: 1 },
+    { name: 'drivingLicense', maxCount: 1 },
+    { name: 'rc', maxCount: 1 }
+]);
+
+// Middleware to conditionally apply multer only for multipart/form-data
+const conditionalMulter: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
+    const contentType = req.headers['content-type'] || '';
+    if (contentType.includes('multipart/form-data')) {
+        // Apply multer middleware for multipart/form-data requests
+        const multerMiddleware = documentFilesUpload as any;
+        return multerMiddleware(req, res, next);
+    }
+    // Skip multer for JSON requests
+    next();
+};
+
 router.post(
     '/documents/request-upload-urls',
     (authenticate as unknown) as RequestHandler,
     limiter,
+    conditionalMulter, // Conditionally handle multipart/form-data
     (requestDocumentUploadUrls as unknown) as RequestHandler
 );
 

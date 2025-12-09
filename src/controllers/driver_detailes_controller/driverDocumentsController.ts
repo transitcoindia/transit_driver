@@ -325,6 +325,10 @@ export const getDocumentStatus = async (
 /**
  * Request presigned URLs for all 3 document images
  * POST /api/driver/documents/request-upload-urls
+ * 
+ * Supports two formats:
+ * 1. JSON body with file metadata: { "aadhar": {"filename": "...", "contentType": "..."}, ... }
+ * 2. Multipart/form-data with actual files: form fields named "aadhar", "drivingLicense", "rc"
  */
 export const requestDocumentUploadUrls = async (
     req: Request,
@@ -351,26 +355,66 @@ export const requestDocumentUploadUrls = async (
         ];
 
         const uploadUrls = [];
+        const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+        const isFormData = files && Object.keys(files).length > 0;
 
         for (const doc of documentsToUpload) {
-            const { filename, contentType } = req.body[doc.name] || {};
+            let filename: string;
+            let contentType: string;
 
-            if (!filename || !contentType) {
-                return next(new AppError(
-                    `Missing ${doc.name} file information (filename and contentType required)`,
-                    400
-                ));
+            if (isFormData) {
+                // Handle multipart/form-data with actual files
+                const fileArray = files?.[doc.name];
+                if (!fileArray || fileArray.length === 0) {
+                    return next(new AppError(
+                        `Missing ${doc.name} file. Please upload the file via form-data.`,
+                        400
+                    ));
+                }
+
+                const file = fileArray[0];
+                filename = file.originalname || `${doc.name}-${Date.now()}`;
+                contentType = file.mimetype;
+
+                // Validate content type
+                const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
+                if (!allowedTypes.includes(contentType)) {
+                    return next(new AppError(
+                        `Invalid file type for ${doc.name}. Received: ${contentType}. Allowed: ${allowedTypes.join(', ')}`,
+                        400
+                    ));
+                }
+            } else {
+                // Handle JSON body with metadata
+                const metadata = req.body[doc.name];
+                if (!metadata || typeof metadata !== 'object') {
+                    return next(new AppError(
+                        `Missing ${doc.name} file information. Provide either: 1) JSON body with {"${doc.name}": {"filename": "...", "contentType": "..."}}, or 2) multipart/form-data with file field named "${doc.name}"`,
+                        400
+                    ));
+                }
+
+                filename = metadata.filename;
+                contentType = metadata.contentType;
+
+                if (!filename || !contentType) {
+                    return next(new AppError(
+                        `Missing ${doc.name} file information (filename and contentType required)`,
+                        400
+                    ));
+                }
+
+                // Validate content type
+                const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
+                if (!allowedTypes.includes(contentType)) {
+                    return next(new AppError(
+                        `Invalid content type for ${doc.name}. Allowed: ${allowedTypes.join(', ')}`,
+                        400
+                    ));
+                }
             }
 
-            // Validate content type
-            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
-            if (!allowedTypes.includes(contentType)) {
-                return next(new AppError(
-                    `Invalid content type for ${doc.name}. Allowed: ${allowedTypes.join(', ')}`,
-                    400
-                ));
-            }
-
+            // Generate presigned URL
             const uploadData = await generatePresignedUploadUrl(
                 doc.folder,
                 filename,
@@ -384,7 +428,9 @@ export const requestDocumentUploadUrls = async (
                 uploadUrl: uploadData.url,
                 key: uploadData.key,
                 bucket: uploadData.bucket,
-                region: uploadData.region
+                region: uploadData.region,
+                filename,
+                contentType
             });
         }
 
@@ -393,6 +439,7 @@ export const requestDocumentUploadUrls = async (
             data: {
                 uploadUrls,
                 expiresIn: 600,
+                requestFormat: isFormData ? 'multipart/form-data' : 'json',
                 instructions: {
                     step1: 'Upload each file to its respective uploadUrl using PUT method',
                     step2: 'Set Content-Type header to match the file type',
