@@ -105,6 +105,62 @@ export const uploadToS3 = async (
 };
 
 /**
+ * Upload file to S3 from buffer (for memory storage)
+ * @param file - Multer file object with buffer
+ * @param folder - S3 folder/prefix
+ * @returns S3 URL and key
+ */
+export const uploadToS3FromBuffer = async (
+    file: Express.Multer.File,
+    folder: string = 'driver-documents'
+): Promise<{ url: string; key: string }> => {
+    try {
+        // Create a unique filename
+        const timestamp = Date.now();
+        const randomSuffix = Math.round(Math.random() * 1e9);
+        const sanitizedFilename = file.originalname.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9._-]/g, '');
+        const key = `${folder}/${timestamp}-${randomSuffix}-${sanitizedFilename}`;
+
+        const uploadParams = {
+            Bucket: bucketName,
+            Key: key,
+            Body: file.buffer,
+            ContentType: file.mimetype,
+            Metadata: {
+                'x-amz-meta-uploaded-by': 'transit-app',
+                'x-amz-meta-document-type': file.originalname.split('.').pop() || '',
+                'x-amz-meta-upload-date': new Date().toISOString()
+            }
+        };
+
+        const uploadResult = await s3Client.send(new PutObjectCommand(uploadParams));
+
+        // Construct the URL based on the bucket name and region
+        const cloudFrontUrl = process.env.AWS_CLOUDFRONT_URL;
+        const url = cloudFrontUrl 
+            ? `${cloudFrontUrl}/${key}`
+            : `https://${bucketName}.s3.${region}.amazonaws.com/${key}`;
+
+        console.log('File uploaded to S3 successfully:', { key, url });
+
+        return { url, key };
+    } catch (error) {
+        console.error('Error uploading file to S3 from buffer:', error);
+
+        const s3Error = error as any;
+        if (s3Error.$metadata && s3Error.Code) {
+            console.error(`S3 Error Details: Code=${s3Error.Code}, Region=${region}, Status=${s3Error.$metadata.httpStatusCode}`, {
+                requestId: s3Error.RequestId,
+                endpoint: s3Error.Endpoint,
+                bucket: bucketName
+            });
+        }
+
+        throw new Error('Failed to upload file to S3');
+    }
+};
+
+/**
  * Generate a presigned PUT URL for direct client-side upload to S3
  * @param folder - S3 folder/prefix (e.g., 'driver-documents', 'vehicle-images/cover')
  * @param filename - Original filename from client

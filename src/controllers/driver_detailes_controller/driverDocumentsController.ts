@@ -323,6 +323,105 @@ export const getDocumentStatus = async (
 };
 
 /**
+ * Upload documents directly to S3 (automatic upload)
+ * POST /api/driver/documents/upload-direct
+ * 
+ * Accepts multipart/form-data with files and automatically uploads them to S3
+ * Returns S3 URLs and keys for use in submit-all endpoint
+ */
+export const uploadDocumentsDirect = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+) => {
+    try {
+        const driverId = req.driver?.id;
+
+        if (!driverId) {
+            return res.status(401).json({
+                status: 'fail',
+                message: 'Unauthorized'
+            });
+        }
+
+        const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+
+        if (!files || Object.keys(files).length === 0) {
+            return next(new AppError(
+                'No files provided. Please upload files via multipart/form-data with fields: aadhar, drivingLicense, rc',
+                400
+            ));
+        }
+
+        const { uploadToS3FromBuffer } = await import('../../utils/s3Upload');
+
+        // Define the 3 documents we need
+        const documentsToUpload = [
+            { name: 'aadhar', type: 'AADHAR' },
+            { name: 'drivingLicense', type: 'DRIVING_LICENSE' },
+            { name: 'rc', type: 'VEHICLE_REGISTRATION' }
+        ];
+
+        const uploadResults = [];
+
+        for (const doc of documentsToUpload) {
+            const fileArray = files?.[doc.name];
+            if (!fileArray || fileArray.length === 0) {
+                return next(new AppError(
+                    `Missing ${doc.name} file. Please upload the file via form-data.`,
+                    400
+                ));
+            }
+
+            const file = fileArray[0];
+
+            // Validate content type
+            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
+            if (!allowedTypes.includes(file.mimetype)) {
+                return next(new AppError(
+                    `Invalid file type for ${doc.name}. Received: ${file.mimetype}. Allowed: ${allowedTypes.join(', ')}`,
+                    400
+                ));
+            }
+
+            // Upload to S3
+            const { url, key } = await uploadToS3FromBuffer(file, 'driver-documents');
+
+            uploadResults.push({
+                documentName: doc.name,
+                documentType: doc.type,
+                s3Url: url,
+                s3Key: key,
+                filename: file.originalname,
+                contentType: file.mimetype,
+                size: file.size
+            });
+        }
+
+        console.log('All documents uploaded to S3 successfully:', {
+            driverId,
+            documentCount: uploadResults.length
+        });
+
+        return res.status(200).json({
+            status: 'success',
+            message: 'All documents uploaded to S3 successfully',
+            data: {
+                uploads: uploadResults,
+                nextStep: 'Call /api/driver/documents/submit-all with document metadata and S3 keys'
+            }
+        });
+
+    } catch (error) {
+        console.error('Error uploading documents to S3:', error);
+        return next(new AppError(
+            `Error uploading documents: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            500
+        ));
+    }
+};
+
+/**
  * Request presigned URLs for all 3 document images
  * POST /api/driver/documents/request-upload-urls
  * 
