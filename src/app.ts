@@ -243,12 +243,12 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   
   // Ensure response is sent even if there's an error
   if (!res.headersSent) {
+    // Always show error message (helpful for debugging)
     res.status(500).json({ 
-      error: 'Something went wrong!',
-      // Only show details in development
+      error: err.message || 'Something went wrong!',
+      // Show stack trace in development only
       ...(process.env.NODE_ENV === 'development' && {
-        message: err.message,
-        stack: err.stack?.split('\n').slice(0, 5), // First 5 lines of stack
+        stack: err.stack?.split('\n').slice(0, 10), // First 10 lines of stack
       })
     });
   }

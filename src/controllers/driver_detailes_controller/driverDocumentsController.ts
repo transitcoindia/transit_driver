@@ -335,6 +335,13 @@ export const uploadDocumentsDirect = async (
     next: NextFunction
 ) => {
     try {
+        console.log('📤 uploadDocumentsDirect called:', {
+            contentType: req.headers['content-type'],
+            hasFiles: !!req.files,
+            filesKeys: req.files ? Object.keys(req.files) : [],
+            driverId: req.driver?.id
+        });
+
         const driverId = req.driver?.id;
 
         if (!driverId) {
@@ -347,11 +354,29 @@ export const uploadDocumentsDirect = async (
         const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
 
         if (!files || Object.keys(files).length === 0) {
+            console.error('❌ No files in request:', {
+                files: req.files,
+                contentType: req.headers['content-type'],
+                body: req.body
+            });
             return next(new AppError(
                 'No files provided. Please upload files via multipart/form-data with fields: aadhar, drivingLicense, rc',
                 400
             ));
         }
+
+        // Log file details
+        console.log('📁 Files received:', Object.keys(files).map(key => ({
+            field: key,
+            count: files[key]?.length || 0,
+            files: files[key]?.map(f => ({
+                originalname: f.originalname,
+                mimetype: f.mimetype,
+                size: f.size,
+                hasBuffer: !!f.buffer,
+                bufferSize: f.buffer?.length || 0
+            }))
+        })));
 
         const { uploadToS3FromBuffer } = await import('../../utils/s3Upload');
 
@@ -414,10 +439,31 @@ export const uploadDocumentsDirect = async (
 
     } catch (error) {
         console.error('Error uploading documents to S3:', error);
-        return next(new AppError(
-            `Error uploading documents: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            500
-        ));
+        
+        // Log detailed error information
+        const errorDetails = {
+            error: error,
+            errorName: error?.constructor?.name,
+            errorMessage: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : undefined,
+            driverId: req.driver?.id,
+            filesReceived: req.files ? Object.keys(req.files).length : 0
+        };
+        console.error('Full error details:', errorDetails);
+
+        // Provide more specific error messages
+        let errorMessage = 'Error uploading documents to S3';
+        if (error instanceof Error) {
+            if (error.message.includes('buffer')) {
+                errorMessage = 'File upload error: File buffer is missing. Please ensure files are sent correctly.';
+            } else if (error.message.includes('AWS') || error.message.includes('S3')) {
+                errorMessage = `S3 Upload Error: ${error.message}`;
+            } else {
+                errorMessage = `Upload Error: ${error.message}`;
+            }
+        }
+
+        return next(new AppError(errorMessage, 500));
     }
 };
 

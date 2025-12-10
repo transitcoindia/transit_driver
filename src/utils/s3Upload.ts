@@ -5,9 +5,26 @@ import path from 'path';
 
 // Initialize S3 client with proper configuration
 // Use environment variables for region and bucket name
-const region = process.env.AWS_REGION || 'ap-south-1';
+// Support both AWS_REGION and AWS_BUCKET_REGION for compatibility
+const region = process.env.AWS_REGION || process.env.AWS_BUCKET_REGION || 'ap-south-1';
 const bucketName = process.env.AWS_S3_BUCKET_NAME || 'transit-driver-documents-shankhtech';
 const s3Endpoint = process.env.AWS_S3_ENDPOINT; // For local MinIO/LocalStack
+
+// Log S3 configuration on startup (only once)
+declare global {
+  var s3ConfigLogged: boolean | undefined;
+}
+
+if (!global.s3ConfigLogged) {
+  console.log('📦 S3 Configuration:', {
+    region: region,
+    bucket: bucketName,
+    hasCredentials: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY),
+    hasEndpoint: !!s3Endpoint,
+    endpoint: s3Endpoint || 'default AWS endpoint'
+  });
+  global.s3ConfigLogged = true;
+}
 
 // Configure the S3 client
 // When running on EC2/EBS with instance profile, credentials are automatically fetched
@@ -115,6 +132,29 @@ export const uploadToS3FromBuffer = async (
     folder: string = 'driver-documents'
 ): Promise<{ url: string; key: string }> => {
     try {
+        // Validate file buffer exists
+        if (!file.buffer) {
+            throw new Error(`File buffer is missing for ${file.originalname}. Make sure multer is configured with memoryStorage().`);
+        }
+
+        // Validate file has required properties
+        if (!file.originalname || !file.mimetype) {
+            throw new Error(`File metadata missing: originalname=${file.originalname}, mimetype=${file.mimetype}`);
+        }
+
+        // Validate S3 configuration
+        if (!bucketName) {
+            throw new Error('AWS_S3_BUCKET_NAME environment variable is not set');
+        }
+
+        console.log('Uploading file to S3:', {
+            filename: file.originalname,
+            size: file.buffer.length,
+            contentType: file.mimetype,
+            bucket: bucketName,
+            region: region
+        });
+
         // Create a unique filename
         const timestamp = Date.now();
         const randomSuffix = Math.round(Math.random() * 1e9);
@@ -133,6 +173,13 @@ export const uploadToS3FromBuffer = async (
             }
         };
 
+        console.log('S3 Upload Params:', {
+            bucket: bucketName,
+            key: key,
+            contentType: file.mimetype,
+            bodySize: file.buffer.length
+        });
+
         const uploadResult = await s3Client.send(new PutObjectCommand(uploadParams));
 
         // Construct the URL based on the bucket name and region
@@ -148,15 +195,30 @@ export const uploadToS3FromBuffer = async (
         console.error('Error uploading file to S3 from buffer:', error);
 
         const s3Error = error as any;
+        let errorMessage = 'Failed to upload file to S3';
+        
         if (s3Error.$metadata && s3Error.Code) {
             console.error(`S3 Error Details: Code=${s3Error.Code}, Region=${region}, Status=${s3Error.$metadata.httpStatusCode}`, {
                 requestId: s3Error.RequestId,
                 endpoint: s3Error.Endpoint,
                 bucket: bucketName
             });
+            errorMessage = `S3 Upload Error: ${s3Error.Code} - ${s3Error.message || 'Unknown error'}`;
+        } else if (error instanceof Error) {
+            errorMessage = error.message;
         }
 
-        throw new Error('Failed to upload file to S3');
+        // Log detailed error for debugging
+        console.error('Full error details:', {
+            error: error,
+            errorName: error?.constructor?.name,
+            errorMessage: errorMessage,
+            bucket: bucketName,
+            region: region,
+            hasCredentials: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY)
+        });
+
+        throw new Error(errorMessage);
     }
 };
 
