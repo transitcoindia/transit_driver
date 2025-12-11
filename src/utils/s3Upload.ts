@@ -17,16 +17,20 @@ declare global {
 }
 
 if (!global.s3ConfigLogged) {
+  // Determine endpoint that will be used
+  const endpointToUse = s3Endpoint || (region === 'ap-south-1' ? 'https://s3.ap-south-1.amazonaws.com' : 'default AWS endpoint');
+  
   console.log('📦 S3 Configuration:', {
     region: region,
     bucket: bucketName,
     hasCredentials: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY),
     hasEndpoint: !!s3Endpoint,
-    endpoint: s3Endpoint || 'default AWS endpoint',
+    endpoint: endpointToUse,
     envVars: {
       AWS_BUCKET_REGION: process.env.AWS_BUCKET_REGION || 'not set',
       AWS_REGION: process.env.AWS_REGION || 'not set',
-      AWS_S3_BUCKET_NAME: process.env.AWS_S3_BUCKET_NAME || 'not set'
+      AWS_S3_BUCKET_NAME: process.env.AWS_S3_BUCKET_NAME || 'not set',
+      AWS_S3_ENDPOINT: process.env.AWS_S3_ENDPOINT || 'not set'
     }
   });
   
@@ -51,10 +55,15 @@ const s3ClientConfig: any = {
     forcePathStyle: s3Endpoint ? true : false, // Required for MinIO/LocalStack
 };
 
-// Add custom endpoint for local development (MinIO, LocalStack, etc.)
+// Set endpoint based on region or custom endpoint
 if (s3Endpoint) {
+    // Custom endpoint for local development (MinIO, LocalStack, etc.)
     s3ClientConfig.endpoint = s3Endpoint;
     console.log(`🔧 Using custom S3 endpoint: ${s3Endpoint}`);
+} else if (region === 'ap-south-1') {
+    // Explicit endpoint for ap-south-1 region to ensure correct routing
+    s3ClientConfig.endpoint = 'https://s3.ap-south-1.amazonaws.com';
+    console.log(`🔧 Using explicit S3 endpoint for ${region}: ${s3ClientConfig.endpoint}`);
 }
 
 // Add explicit credentials if provided (for local dev)
