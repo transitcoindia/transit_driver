@@ -5,8 +5,9 @@ import path from 'path';
 
 // Initialize S3 client with proper configuration
 // Use environment variables for region and bucket name
-// Support both AWS_REGION and AWS_BUCKET_REGION for compatibility
-const region = process.env.AWS_REGION || process.env.AWS_BUCKET_REGION || 'ap-south-1';
+// Priority: AWS_BUCKET_REGION > AWS_REGION > default (ap-south-1)
+// Note: AWS_BUCKET_REGION should match the actual bucket region
+const region = process.env.AWS_BUCKET_REGION || process.env.AWS_REGION || 'ap-south-1';
 const bucketName = process.env.AWS_S3_BUCKET_NAME || 'transit-driver-documents-shankhtech';
 const s3Endpoint = process.env.AWS_S3_ENDPOINT; // For local MinIO/LocalStack
 
@@ -21,8 +22,20 @@ if (!global.s3ConfigLogged) {
     bucket: bucketName,
     hasCredentials: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY),
     hasEndpoint: !!s3Endpoint,
-    endpoint: s3Endpoint || 'default AWS endpoint'
+    endpoint: s3Endpoint || 'default AWS endpoint',
+    envVars: {
+      AWS_BUCKET_REGION: process.env.AWS_BUCKET_REGION || 'not set',
+      AWS_REGION: process.env.AWS_REGION || 'not set',
+      AWS_S3_BUCKET_NAME: process.env.AWS_S3_BUCKET_NAME || 'not set'
+    }
   });
+  
+  // Warn if region might be incorrect
+  if (bucketName === 'transit-driver-documents-shankhtech' && region !== 'ap-south-1') {
+    console.warn(`⚠️ WARNING: Bucket "${bucketName}" is in ap-south-1, but configured region is "${region}"`);
+    console.warn('⚠️ This may cause presigned URL generation to fail. Set AWS_BUCKET_REGION=ap-south-1');
+  }
+  
   global.s3ConfigLogged = true;
 }
 
@@ -285,6 +298,15 @@ export const generatePresignedUploadUrl = async (
     expiresIn: number = 300
 ): Promise<{ url: string; key: string; bucket: string; region: string }> => {
     try {
+        // Log configuration for debugging
+        console.log('Generating presigned URL with config:', {
+            bucket: bucketName,
+            region: region,
+            folder: folder,
+            filename: filename,
+            contentType: contentType
+        });
+
         // Sanitize filename
         const sanitizedFilename = filename.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9._-]/g, '');
         
@@ -308,6 +330,24 @@ export const generatePresignedUploadUrl = async (
         // Generate presigned URL
         const url = await getSignedUrl(s3Client, command, { expiresIn });
 
+        // Validate that the generated URL uses the correct region
+        // Extract region from URL to verify
+        const urlRegionMatch = url.match(/\.s3\.([^.]+)\.amazonaws\.com/);
+        const urlRegion = urlRegionMatch ? urlRegionMatch[1] : 'unknown';
+        
+        if (urlRegion !== region && urlRegion !== 'unknown') {
+            console.warn(`⚠️ Region mismatch detected! Expected: ${region}, URL contains: ${urlRegion}`);
+            console.warn('This may cause upload failures. Check AWS_REGION or AWS_BUCKET_REGION environment variable.');
+        }
+
+        console.log('Presigned URL generated:', {
+            key: key,
+            bucket: bucketName,
+            expectedRegion: region,
+            urlRegion: urlRegion,
+            urlPreview: url.substring(0, 100) + '...'
+        });
+
         return {
             url,
             key,
@@ -316,7 +356,16 @@ export const generatePresignedUploadUrl = async (
         };
     } catch (error) {
         console.error('Error generating presigned URL:', error);
-        throw new Error('Failed to generate upload URL');
+        console.error('Configuration at time of error:', {
+            bucket: bucketName,
+            region: region,
+            hasCredentials: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY)
+        });
+        
+        if (error instanceof Error) {
+            throw new Error(`Failed to generate upload URL: ${error.message}`);
+        }
+        throw new Error('Failed to generate upload URL: Unknown error');
     }
 };
 
