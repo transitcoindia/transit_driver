@@ -2,6 +2,7 @@ import express,{RequestHandler, ErrorRequestHandler} from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
+import AppError from '../utils/AppError';
 import { 
     register, 
     verifyDriverEmail, 
@@ -112,23 +113,28 @@ const handleMulterError = ((err: any, req: Request, res: Response, next: NextFun
         errorName: err.name,
         errorMessage: err.message,
         errorCode: err.code,
-        requestHeaders: req.headers,
-        requestBody: req.body,
-        requestFiles: req.files
+        requestUrl: req.url,
+        requestMethod: req.method,
+        // Only log body in development
+        ...(process.env.NODE_ENV === 'development' && {
+            requestHeaders: req.headers,
+            requestBody: req.body,
+            requestFiles: req.files
+        })
     });
 
     if (err instanceof multer.MulterError) {
         console.error('Multer error:', err);
-        return res.status(400).json({
-            status: 'error',
-            message: `Upload error: ${err.message}`
-        });
+        // Use AppError for consistent error handling
+        const appError = new AppError(`Upload error: ${err.message}`, 400);
+        return next(appError);
     } else if (err) {
-        console.error('Other error:', err);
-        return res.status(500).json({
-            status: 'error',
-            message: err.message
-        });
+        console.error('Other upload error:', err);
+        // Use AppError for consistent error handling
+        const statusCode = err.statusCode || 500;
+        const message = err.message || 'File upload failed';
+        const appError = new AppError(message, statusCode);
+        return next(appError);
     }
     next();
 }) as ErrorRequestHandler;

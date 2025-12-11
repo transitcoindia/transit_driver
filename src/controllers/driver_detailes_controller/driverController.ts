@@ -446,37 +446,67 @@ export const uploadVehicleImages = async (req: Request, res: Response, next: Nex
         console.log('Vehicle images upload request:', {
             driverId,
             files: req.files,
-            body: req.body
+            body: req.body,
+            fileFields: req.files ? Object.keys(req.files as object) : []
         });
 
         // Check if files were uploaded
         if (!req.files || typeof req.files !== 'object') {
-            return next(new AppError('No images uploaded', 400));
+            return next(new AppError('No images uploaded. Please ensure files are sent with correct field names: coverImage, exteriorImages, interiorImages', 400));
         }
 
         const files = req.files as { [fieldname: string]: Express.Multer.File[] };
 
-        // Validate minimum requirements
-        const coverImages = files['coverImage'] || [];
-        const exteriorImages = files['exteriorImages'] || [];
-        const interiorImages = files['interiorImages'] || [];
-
-        console.log('Image counts:', {
-            cover: coverImages.length,
-            exterior: exteriorImages.length,
-            interior: interiorImages.length
+        // Handle case-insensitive field names (some clients send lowercase)
+        // Normalize field names to match multer configuration
+        const normalizedFiles: { [fieldname: string]: Express.Multer.File[] } = {};
+        Object.keys(files).forEach(key => {
+            const normalizedKey = key.toLowerCase();
+            if (normalizedKey === 'coverimage') {
+                normalizedFiles['coverImage'] = files[key];
+            } else if (normalizedKey === 'exteriorimages') {
+                normalizedFiles['exteriorImages'] = files[key];
+            } else if (normalizedKey === 'interiorimages') {
+                normalizedFiles['interiorImages'] = files[key];
+            } else {
+                // Keep original key if it matches expected format
+                normalizedFiles[key] = files[key];
+            }
         });
 
+        // Validate minimum requirements with normalized field names
+        const coverImages = normalizedFiles['coverImage'] || files['coverImage'] || [];
+        const exteriorImages = normalizedFiles['exteriorImages'] || files['exteriorImages'] || [];
+        const interiorImages = normalizedFiles['interiorImages'] || files['interiorImages'] || [];
+
+        console.log('Image counts (after normalization):', {
+            cover: coverImages.length,
+            exterior: exteriorImages.length,
+            interior: interiorImages.length,
+            allFieldNames: Object.keys(files)
+        });
+
+        // Provide helpful error messages if field names don't match
         if (coverImages.length === 0) {
-            return next(new AppError('Cover image is required', 400));
+            const availableFields = Object.keys(files);
+            return next(new AppError(
+                `Cover image is required. Received fields: ${availableFields.join(', ')}. Expected field name: 'coverImage' (case-sensitive)`, 
+                400
+            ));
         }
 
         if (exteriorImages.length < 3) {
-            return next(new AppError('At least 3 exterior images are required', 400));
+            return next(new AppError(
+                `At least 3 exterior images are required. Received: ${exteriorImages.length}. Expected field name: 'exteriorImages' (case-sensitive)`, 
+                400
+            ));
         }
 
         if (interiorImages.length < 3) {
-            return next(new AppError('At least 3 interior images are required', 400));
+            return next(new AppError(
+                `At least 3 interior images are required. Received: ${interiorImages.length}. Expected field name: 'interiorImages' (case-sensitive)`, 
+                400
+            ));
         }
 
         // Check if driver has a vehicle
@@ -576,20 +606,73 @@ export const uploadVehicleImages = async (req: Request, res: Response, next: Nex
     } catch (error) {
         console.error('Error uploading vehicle images:', error);
         
+        // Log detailed error information
+        if (error instanceof Error) {
+            console.error('Error details:', {
+                message: error.message,
+                stack: error.stack,
+                name: error.name
+            });
+        }
+
         // Clean up any uploaded files on error
         if (req.files && typeof req.files === 'object') {
             const files = req.files as { [fieldname: string]: Express.Multer.File[] };
             Object.values(files).flat().forEach((file: Express.Multer.File) => {
-                if (fs.existsSync(file.path)) {
-                    fs.unlinkSync(file.path);
+                try {
+                    if (file.path && fs.existsSync(file.path)) {
+                        fs.unlinkSync(file.path);
+                        console.log(`Cleaned up temp file: ${file.path}`);
+                    }
+                } catch (cleanupError) {
+                    console.error(`Error cleaning up file ${file.path}:`, cleanupError);
                 }
             });
         }
 
+        // Handle AppError instances (already formatted)
         if (error instanceof AppError) {
             return next(error);
         }
-        return next(new AppError(`Error uploading vehicle images: ${error instanceof Error ? error.message : 'Unknown error'}`, 500));
+
+        // Handle specific error types
+        if (error instanceof Error) {
+            // Check for S3-related errors
+            if (error.message.includes('S3') || error.message.includes('AWS')) {
+                return next(new AppError(
+                    `Failed to upload images to storage: ${error.message}. Please try again or contact support if the issue persists.`,
+                    500
+                ));
+            }
+
+            // Check for file system errors
+            if (error.message.includes('ENOENT') || error.message.includes('not found')) {
+                return next(new AppError(
+                    'File not found. The uploaded file may have been deleted or moved. Please try uploading again.',
+                    500
+                ));
+            }
+
+            // Check for permission errors
+            if (error.message.includes('EACCES') || error.message.includes('permission')) {
+                return next(new AppError(
+                    'Permission denied while processing files. Please contact support.',
+                    500
+                ));
+            }
+
+            // Generic error with message
+            return next(new AppError(
+                `Error uploading vehicle images: ${error.message}`,
+                500
+            ));
+        }
+
+        // Unknown error
+        return next(new AppError(
+            'An unexpected error occurred while uploading vehicle images. Please try again or contact support if the issue persists.',
+            500
+        ));
     }
 };
 

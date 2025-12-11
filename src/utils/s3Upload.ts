@@ -60,6 +60,38 @@ export const uploadToS3 = async (
     folder: string = 'driver-documents'
 ): Promise<string> => {
     try {
+        // Validate file object
+        if (!file) {
+            throw new Error('File object is required');
+        }
+
+        // Validate file path exists
+        if (!file.path) {
+            throw new Error(`File path is missing for ${file.originalname || 'unknown file'}. The file may not have been uploaded correctly.`);
+        }
+
+        // Check if file exists on disk
+        if (!fs.existsSync(file.path)) {
+            throw new Error(`File not found at path: ${file.path}. The file may have been deleted or moved.`);
+        }
+
+        // Validate file has required properties
+        if (!file.originalname) {
+            throw new Error('File originalname is missing');
+        }
+
+        if (!file.mimetype) {
+            throw new Error('File mimetype is missing');
+        }
+
+        console.log('Uploading file to S3:', {
+            filename: file.originalname,
+            path: file.path,
+            size: fs.statSync(file.path).size,
+            contentType: file.mimetype,
+            folder: folder
+        });
+
         const fileStream = fs.createReadStream(file.path);
 
         // Create a unique filename
@@ -81,8 +113,16 @@ export const uploadToS3 = async (
 
         const uploadResult = await s3Client.send(new PutObjectCommand(uploadParams));
 
+        console.log('File uploaded to S3 successfully:', {
+            filename: file.originalname,
+            s3Key: filename,
+            bucket: bucketName
+        });
+
         // Clean up the local file
-        fs.unlinkSync(file.path);
+        if (fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+        }
 
         // Construct the URL based on the bucket name and region
         // For private buckets, you'll need to use CloudFront or presigned URLs
@@ -113,11 +153,19 @@ export const uploadToS3 = async (
         }
 
         // Clean up the local file if it exists
-        if (file.path && fs.existsSync(file.path)) {
-            fs.unlinkSync(file.path);
+        if (file && file.path && fs.existsSync(file.path)) {
+            try {
+                fs.unlinkSync(file.path);
+            } catch (cleanupError) {
+                console.error('Error cleaning up file:', cleanupError);
+            }
         }
 
-        throw new Error('Failed to upload file to S3');
+        // Provide more descriptive error message
+        if (error instanceof Error) {
+            throw new Error(`Failed to upload file to S3: ${error.message}`);
+        }
+        throw new Error('Failed to upload file to S3: Unknown error');
     }
 };
 

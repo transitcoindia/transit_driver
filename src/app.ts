@@ -231,21 +231,32 @@ app.use('/api/driver/s2', s2LocationIngest);
 app.use('/api/driver/testing', s2LocationIngestPublic);
 
 // Error handler - MUST come after all routes
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+app.use((err: Error | any, req: Request, res: Response, next: NextFunction) => {
+  // Check if it's an AppError instance (has statusCode property)
+  const isAppError = err && typeof err === 'object' && 'statusCode' in err;
+  const statusCode = isAppError ? err.statusCode : 500;
+  const errorMessage = err.message || 'Something went wrong!';
+
   console.error('❌ Unhandled error:', {
-    message: err.message,
+    message: errorMessage,
+    statusCode: statusCode,
     stack: err.stack,
     url: req.url,
     method: req.method,
-    body: req.body,
-    headers: req.headers,
+    isAppError: isAppError,
+    // Only log body in development to avoid logging sensitive data
+    ...(process.env.NODE_ENV === 'development' && {
+      body: req.body,
+      headers: req.headers,
+    })
   });
   
   // Ensure response is sent even if there's an error
   if (!res.headersSent) {
-    // Always show error message (helpful for debugging)
-    res.status(500).json({ 
-      error: err.message || 'Something went wrong!',
+    // Return proper error response format
+    res.status(statusCode).json({ 
+      status: statusCode >= 500 ? 'error' : 'fail',
+      error: errorMessage,
       // Show stack trace in development only
       ...(process.env.NODE_ENV === 'development' && {
         stack: err.stack?.split('\n').slice(0, 10), // First 10 lines of stack
