@@ -222,7 +222,7 @@ export const uploadToS3FromBuffer = async (
         const sanitizedFilename = file.originalname.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9._-]/g, '');
         const key = `${folder}/${timestamp}-${randomSuffix}-${sanitizedFilename}`;
 
-        const uploadParams = {
+        let uploadParams: any = {
             Bucket: bucketName,
             Key: key,
             Body: file.buffer,
@@ -238,10 +238,30 @@ export const uploadToS3FromBuffer = async (
             bucket: bucketName,
             key: key,
             contentType: file.mimetype,
-            bodySize: file.buffer.length
+            bodySize: file.buffer.length,
+            hasCredentials: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY),
+            region: region
         });
 
-        const uploadResult = await s3Client.send(new PutObjectCommand(uploadParams));
+        let uploadResult;
+        try {
+            uploadResult = await s3Client.send(new PutObjectCommand(uploadParams));
+        } catch (firstError: any) {
+            // If AccessDenied, try with ACL (bucket might require explicit ACL)
+            if (firstError.Code === 'AccessDenied' || firstError.name === 'AccessDenied') {
+                console.log('⚠️ AccessDenied error, retrying with ACL...');
+                uploadParams.ACL = 'private';
+                try {
+                    uploadResult = await s3Client.send(new PutObjectCommand(uploadParams));
+                } catch (aclError: any) {
+                    // If ACL also fails, throw original error with better message
+                    console.error('❌ Upload failed even with ACL:', aclError);
+                    throw new Error(`S3 Access Denied. Please check IAM permissions for user/role. Required permissions: s3:PutObject, s3:PutObjectAcl. Error: ${firstError.message || firstError.Code || 'Unknown error'}`);
+                }
+            } else {
+                throw firstError;
+            }
+        }
 
         // Construct the URL based on the bucket name and region
         const cloudFrontUrl = process.env.AWS_CLOUDFRONT_URL;
@@ -264,7 +284,15 @@ export const uploadToS3FromBuffer = async (
                 endpoint: s3Error.Endpoint,
                 bucket: bucketName
             });
-            errorMessage = `S3 Upload Error: ${s3Error.Code} - ${s3Error.message || 'Unknown error'}`;
+            
+            // Provide specific guidance for AccessDenied errors
+            if (s3Error.Code === 'AccessDenied' || s3Error.name === 'AccessDenied') {
+                errorMessage = `S3 Access Denied: The IAM user/role does not have permission to upload to bucket "${bucketName}". ` +
+                    `Required permissions: s3:PutObject, s3:PutObjectAcl. ` +
+                    `Check IAM policies and bucket policies. Error: ${s3Error.message || 'Access Denied'}`;
+            } else {
+                errorMessage = `S3 Upload Error: ${s3Error.Code} - ${s3Error.message || 'Unknown error'}`;
+            }
         } else if (error instanceof Error) {
             errorMessage = error.message;
         }
@@ -276,7 +304,11 @@ export const uploadToS3FromBuffer = async (
             errorMessage: errorMessage,
             bucket: bucketName,
             region: region,
-            hasCredentials: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY)
+            hasCredentials: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY),
+            accessKeyId: process.env.AWS_ACCESS_KEY_ID ? process.env.AWS_ACCESS_KEY_ID.substring(0, 8) + '...' : 'not set',
+            s3ErrorCode: s3Error.Code,
+            s3ErrorName: s3Error.name,
+            key: (error as any).key || 'unknown'
         });
 
         throw new Error(errorMessage);
