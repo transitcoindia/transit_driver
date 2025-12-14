@@ -18,19 +18,20 @@ declare global {
 
 if (!global.s3ConfigLogged) {
   // Determine endpoint that will be used
-  const endpointToUse = s3Endpoint || (region === 'ap-south-1' ? 'https://s3.ap-south-1.amazonaws.com' : 'default AWS endpoint');
+  const endpointToUse = s3Endpoint || 'AWS SDK automatic (based on region)';
   
   console.log('📦 S3 Configuration:', {
     region: region,
     bucket: bucketName,
     hasCredentials: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY),
-    hasEndpoint: !!s3Endpoint,
+    hasCustomEndpoint: !!s3Endpoint,
     endpoint: endpointToUse,
+    note: s3Endpoint ? 'Using custom endpoint' : 'Using AWS SDK automatic endpoint resolution',
     envVars: {
       AWS_BUCKET_REGION: process.env.AWS_BUCKET_REGION || 'not set',
       AWS_REGION: process.env.AWS_REGION || 'not set',
       AWS_S3_BUCKET_NAME: process.env.AWS_S3_BUCKET_NAME || 'not set',
-      AWS_S3_ENDPOINT: process.env.AWS_S3_ENDPOINT || 'not set'
+      AWS_S3_ENDPOINT: process.env.AWS_S3_ENDPOINT || 'not set (using SDK default)'
     }
   });
   
@@ -52,18 +53,22 @@ const s3ClientConfig: any = {
     // 1. Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
     // 2. EC2 Instance Metadata Service (when using instance profile)
     // 3. ECS task role (when running in ECS)
-    forcePathStyle: s3Endpoint ? true : false, // Required for MinIO/LocalStack
+    // Note: Do NOT set endpoint for AWS S3 - SDK handles it automatically
+    // Only set endpoint for custom services like MinIO/LocalStack
+    forcePathStyle: false, // Use virtual-hosted style (bucket.s3.region.amazonaws.com)
 };
 
-// Set endpoint based on region or custom endpoint
+// Only set endpoint for custom/local S3 services (MinIO, LocalStack, etc.)
+// For AWS S3, let the SDK automatically determine the correct endpoint based on region
 if (s3Endpoint) {
     // Custom endpoint for local development (MinIO, LocalStack, etc.)
     s3ClientConfig.endpoint = s3Endpoint;
+    s3ClientConfig.forcePathStyle = true; // Required for custom endpoints
     console.log(`🔧 Using custom S3 endpoint: ${s3Endpoint}`);
-} else if (region === 'ap-south-1') {
-    // Explicit endpoint for ap-south-1 region to ensure correct routing
-    s3ClientConfig.endpoint = 'https://s3.ap-south-1.amazonaws.com';
-    console.log(`🔧 Using explicit S3 endpoint for ${region}: ${s3ClientConfig.endpoint}`);
+} else {
+    // For AWS S3, don't set endpoint - SDK will use correct endpoint based on region
+    // This prevents PermanentRedirect errors
+    console.log(`🔧 Using AWS S3 with automatic endpoint resolution for region: ${region}`);
 }
 
 // Add explicit credentials if provided (for local dev)
@@ -133,7 +138,51 @@ export const uploadToS3 = async (
             }
         };
 
-        const uploadResult = await s3Client.send(new PutObjectCommand(uploadParams));
+        let uploadResult;
+        try {
+            uploadResult = await s3Client.send(new PutObjectCommand(uploadParams));
+        } catch (firstError: any) {
+            // Handle PermanentRedirect error - bucket might be in different region
+            if (firstError.Code === 'PermanentRedirect' || firstError.name === 'PermanentRedirect') {
+                console.error('⚠️ PermanentRedirect error detected');
+                console.error('Error details:', {
+                    Code: firstError.Code,
+                    Endpoint: firstError.Endpoint,
+                    Region: firstError.Region,
+                    Bucket: bucketName,
+                    CurrentRegion: region
+                });
+                
+                // Extract the correct region from error
+                const correctRegion = firstError.Region || 'ap-south-1';
+                
+                console.log(`🔄 Retrying with correct region: ${correctRegion}`);
+                
+                // Create a new S3 client with the correct region (don't set endpoint for AWS)
+                const correctedS3Config: any = {
+                    region: correctRegion,
+                    forcePathStyle: false,
+                };
+                
+                if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+                    correctedS3Config.credentials = {
+                        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+                        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+                    };
+                }
+                
+                const correctedS3Client = new S3Client(correctedS3Config);
+                
+                try {
+                    uploadResult = await correctedS3Client.send(new PutObjectCommand(uploadParams));
+                    console.log('✅ Upload succeeded after redirect correction');
+                } catch (retryError: any) {
+                    throw new Error(`S3 PermanentRedirect: Bucket "${bucketName}" is in region "${correctRegion}", but configured region is "${region}". Set AWS_BUCKET_REGION=${correctRegion}`);
+                }
+            } else {
+                throw firstError;
+            }
+        }
 
         console.log('File uploaded to S3 successfully:', {
             filename: file.originalname,
@@ -256,8 +305,49 @@ export const uploadToS3FromBuffer = async (
         try {
             uploadResult = await s3Client.send(new PutObjectCommand(uploadParams));
         } catch (firstError: any) {
+            // Handle PermanentRedirect error - bucket might be in different region
+            if (firstError.Code === 'PermanentRedirect' || firstError.name === 'PermanentRedirect') {
+                console.error('⚠️ PermanentRedirect error detected');
+                console.error('Error details:', {
+                    Code: firstError.Code,
+                    Endpoint: firstError.Endpoint,
+                    Region: firstError.Region,
+                    Bucket: bucketName,
+                    CurrentRegion: region
+                });
+                
+                // Extract the correct endpoint from error if available
+                const correctEndpoint = firstError.Endpoint || `https://s3.ap-south-1.amazonaws.com`;
+                const correctRegion = firstError.Region || 'ap-south-1';
+                
+                console.log(`🔄 Retrying with correct endpoint: ${correctEndpoint} (region: ${correctRegion})`);
+                
+                // Create a new S3 client with the correct endpoint
+                const correctedS3Config: any = {
+                    ...s3ClientConfig,
+                    region: correctRegion,
+                    endpoint: correctEndpoint,
+                    forcePathStyle: false,
+                };
+                
+                if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+                    correctedS3Config.credentials = {
+                        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+                        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+                    };
+                }
+                
+                const correctedS3Client = new S3Client(correctedS3Config);
+                
+                try {
+                    uploadResult = await correctedS3Client.send(new PutObjectCommand(uploadParams));
+                    console.log('✅ Upload succeeded after redirect correction');
+                } catch (retryError: any) {
+                    throw new Error(`S3 PermanentRedirect: Bucket "${bucketName}" must be accessed using endpoint "${correctEndpoint}" in region "${correctRegion}". Please set AWS_BUCKET_REGION=${correctRegion} and ensure AWS_S3_ENDPOINT is not set.`);
+                }
+            }
             // If AccessDenied, try with ACL (bucket might require explicit ACL)
-            if (firstError.Code === 'AccessDenied' || firstError.name === 'AccessDenied') {
+            else if (firstError.Code === 'AccessDenied' || firstError.name === 'AccessDenied') {
                 console.log('⚠️ AccessDenied error, retrying with ACL...');
                 uploadParams.ACL = 'private';
                 try {
@@ -291,11 +381,20 @@ export const uploadToS3FromBuffer = async (
             console.error(`S3 Error Details: Code=${s3Error.Code}, Region=${region}, Status=${s3Error.$metadata.httpStatusCode}`, {
                 requestId: s3Error.RequestId,
                 endpoint: s3Error.Endpoint,
-                bucket: bucketName
+                bucket: bucketName,
+                region: s3Error.Region
             });
             
+            // Provide specific guidance for PermanentRedirect errors
+            if (s3Error.Code === 'PermanentRedirect' || s3Error.name === 'PermanentRedirect') {
+                const correctEndpoint = s3Error.Endpoint || `https://s3.ap-south-1.amazonaws.com`;
+                const correctRegion = s3Error.Region || 'ap-south-1';
+                errorMessage = `S3 PermanentRedirect: The bucket "${bucketName}" must be accessed using endpoint "${correctEndpoint}" in region "${correctRegion}". ` +
+                    `Current configuration: region="${region}", endpoint="${s3ClientConfig.endpoint || 'default'}". ` +
+                    `Fix: Set AWS_BUCKET_REGION=${correctRegion} in your environment variables.`;
+            }
             // Provide specific guidance for AccessDenied errors
-            if (s3Error.Code === 'AccessDenied' || s3Error.name === 'AccessDenied') {
+            else if (s3Error.Code === 'AccessDenied' || s3Error.name === 'AccessDenied') {
                 errorMessage = `S3 Access Denied: The IAM user/role does not have permission to upload to bucket "${bucketName}". ` +
                     `Required permissions: s3:PutObject, s3:PutObjectAcl. ` +
                     `Check IAM policies and bucket policies. Error: ${s3Error.message || 'Access Denied'}`;

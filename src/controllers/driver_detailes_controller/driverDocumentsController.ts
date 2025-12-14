@@ -8,6 +8,18 @@ import { z } from 'zod';
  * Handles the Flutter driver documents screen API endpoints
  */
 
+// Type definition for upload results
+interface UploadResult {
+    documentName: string;
+    documentType: string;
+    documentId: string;
+    filename: string;
+    contentType: string;
+    size: number;
+    base64Length: number;
+    saved: boolean;
+}
+
 // Validation schema for document upload request
 const driverDocumentsSchema = z.object({
     // Aadhar and PAN details
@@ -323,11 +335,11 @@ export const getDocumentStatus = async (
 };
 
 /**
- * Upload documents directly to S3 (automatic upload)
+ * Upload documents directly to Supabase database (base64 format)
  * POST /api/driver/documents/upload-direct
  * 
- * Accepts multipart/form-data with files and automatically uploads them to S3
- * Returns S3 URLs and keys for use in submit-all endpoint
+ * Accepts multipart/form-data with files and saves them as base64 in Supabase database
+ * Uses Prisma to directly connect to the database
  */
 export const uploadDocumentsDirect = async (
     req: Request,
@@ -378,8 +390,6 @@ export const uploadDocumentsDirect = async (
             }))
         })));
 
-        const { uploadToS3FromBuffer } = await import('../../utils/s3Upload');
-
         // Define the 3 documents we need
         const documentsToUpload = [
             { name: 'aadhar', type: 'AADHAR' },
@@ -387,58 +397,114 @@ export const uploadDocumentsDirect = async (
             { name: 'rc', type: 'VEHICLE_REGISTRATION' }
         ];
 
-        const uploadResults = [];
+        const uploadResults: UploadResult[] = [];
 
-        for (const doc of documentsToUpload) {
-            const fileArray = files?.[doc.name];
-            if (!fileArray || fileArray.length === 0) {
-                return next(new AppError(
-                    `Missing ${doc.name} file. Please upload the file via form-data.`,
-                    400
-                ));
+        // Process all documents in a transaction
+        const result = await prisma.$transaction(async (tx) => {
+            for (const doc of documentsToUpload) {
+                const fileArray = files?.[doc.name];
+                if (!fileArray || fileArray.length === 0) {
+                    throw new AppError(
+                        `Missing ${doc.name} file. Please upload the file via form-data.`,
+                        400
+                    );
+                }
+
+                const file = fileArray[0];
+
+                // Validate content type
+                const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
+                if (!allowedTypes.includes(file.mimetype)) {
+                    throw new AppError(
+                        `Invalid file type for ${doc.name}. Received: ${file.mimetype}. Allowed: ${allowedTypes.join(', ')}`,
+                        400
+                    );
+                }
+
+                // Validate file buffer exists
+                if (!file.buffer) {
+                    throw new AppError(
+                        `File buffer is missing for ${doc.name}. Make sure multer is configured with memoryStorage().`,
+                        400
+                    );
+                }
+
+                // Convert buffer to base64
+                const base64Data = file.buffer.toString('base64');
+                const base64String = `data:${file.mimetype};base64,${base64Data}`;
+
+                console.log(`Converting ${doc.name} to base64:`, {
+                    filename: file.originalname,
+                    size: file.size,
+                    base64Length: base64String.length,
+                    contentType: file.mimetype
+                });
+
+                // Check if document already exists for this driver and type
+                const existingDoc = await tx.driverDocument.findFirst({
+                    where: {
+                        driverId: driverId,
+                        documentType: doc.type
+                    }
+                });
+
+                let savedDocument;
+                if (existingDoc) {
+                    // Update existing document
+                    savedDocument = await tx.driverDocument.update({
+                        where: { id: existingDoc.id },
+                        data: {
+                            documentUrl: base64String,
+                            uploadDate: new Date(),
+                            isVerified: false, // Reset verification status on update
+                            verifiedDate: null,
+                            verificationNotes: null
+                        }
+                    });
+                } else {
+                    // Create new document
+                    savedDocument = await tx.driverDocument.create({
+                        data: {
+                            driverId: driverId,
+                            documentType: doc.type,
+                            documentUrl: base64String,
+                            uploadDate: new Date(),
+                            isVerified: false
+                        }
+                    });
+                }
+
+                uploadResults.push({
+                    documentName: doc.name,
+                    documentType: doc.type,
+                    documentId: savedDocument.id,
+                    filename: file.originalname,
+                    contentType: file.mimetype,
+                    size: file.size,
+                    base64Length: base64String.length,
+                    saved: true
+                });
             }
 
-            const file = fileArray[0];
+            return uploadResults;
+        });
 
-            // Validate content type
-            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
-            if (!allowedTypes.includes(file.mimetype)) {
-                return next(new AppError(
-                    `Invalid file type for ${doc.name}. Received: ${file.mimetype}. Allowed: ${allowedTypes.join(', ')}`,
-                    400
-                ));
-            }
-
-            // Upload to S3
-            const { url, key } = await uploadToS3FromBuffer(file, 'driver-documents');
-
-            uploadResults.push({
-                documentName: doc.name,
-                documentType: doc.type,
-                s3Url: url,
-                s3Key: key,
-                filename: file.originalname,
-                contentType: file.mimetype,
-                size: file.size
-            });
-        }
-
-        console.log('All documents uploaded to S3 successfully:', {
+        console.log('All documents saved to Supabase database successfully:', {
             driverId,
-            documentCount: uploadResults.length
+            documentCount: result.length
         });
 
         return res.status(200).json({
             status: 'success',
-            message: 'All documents uploaded to S3 successfully',
+            message: 'All documents saved to database successfully in base64 format',
             data: {
-                uploads: uploadResults,
-                nextStep: 'Call /api/driver/documents/submit-all with document metadata and S3 keys'
+                uploads: result,
+                message: 'Documents are stored in base64 format in Supabase database'
             }
         });
 
     } catch (error) {
-        console.error('Error uploading documents to S3:', error);
+        console.error('Error saving documents to database:', error);
         
         // Log detailed error information
         const errorDetails = {
@@ -452,12 +518,12 @@ export const uploadDocumentsDirect = async (
         console.error('Full error details:', errorDetails);
 
         // Provide more specific error messages
-        let errorMessage = 'Error uploading documents to S3';
+        let errorMessage = 'Error saving documents to database';
         if (error instanceof Error) {
             if (error.message.includes('buffer')) {
                 errorMessage = 'File upload error: File buffer is missing. Please ensure files are sent correctly.';
-            } else if (error.message.includes('AWS') || error.message.includes('S3')) {
-                errorMessage = `S3 Upload Error: ${error.message}`;
+            } else if (error.message.includes('Prisma') || error.message.includes('database')) {
+                errorMessage = `Database Error: ${error.message}`;
             } else {
                 errorMessage = `Upload Error: ${error.message}`;
             }
@@ -559,12 +625,13 @@ export const requestDocumentUploadUrls = async (
                 }
             }
 
-            // Generate presigned URL
+            // Generate presigned URL with longer expiration for mobile uploads
+            // Increased to 15 minutes (900 seconds) to account for network delays and retries
             const uploadData = await generatePresignedUploadUrl(
                 doc.folder,
                 filename,
                 contentType,
-                600 // 10 minutes expiration for mobile uploads
+                900 // 15 minutes expiration for mobile uploads (was 10 minutes)
             );
 
             uploadUrls.push({
