@@ -38,7 +38,7 @@ model Driver {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  @@map("Driver")
+  @@map("driver")
 }
 
 model Verification {
@@ -86,7 +86,7 @@ model DriverDetails {
 
   @@index([isAvailable, isVerified])
   @@index([city, isAvailable])
-  @@map("DriverDetails")
+  @@map("driver_details")
 }
 
 model DriverDocument {
@@ -103,7 +103,7 @@ model DriverDocument {
   verifiedDate      DateTime?
 
   @@index([driverId])
-  @@map("DriverDocument")
+  @@map("driver_document")
 }
 
 model DriverSubscription {
