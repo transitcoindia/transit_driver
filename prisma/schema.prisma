@@ -15,29 +15,35 @@ datasource db {
 }
 
 model Driver {
-  id            String    @id @default(uuid())
-  name          String
-  email         String    @unique
-  phoneNumber   String    @unique
-  password      String
-  emailVerified Boolean   @default(false)
-  phoneNumberVerified Boolean   @default(false)
-  resetToken    String?   @unique
-  resetTokenExpiresAt DateTime?
-  driverDetails DriverDetails?
-  documents     DriverDocument[]
-  vehicle       Vehicle?
-  rides         Ride[]
-  payments      Payment[]
-  subscriptions DriverSubscription[]
-  driverLocation DriverLocation?
-  driverStatus   DriverStatus?
-  rideRequests   DriverRideRequests[]
-  assignedRides  RideRequest[] @relation("AssignedDriver")
-  bookings       Booking[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                   String                 @id
+  name                 String
+  email                String                 @unique
+  phoneNumber          String                 @unique
+  password             String
+  emailVerified        Boolean                @default(false)
+  phoneNumberVerified  Boolean               @default(false)
+  resetToken           String?                @unique
+  resetTokenExpiresAt  DateTime?
+  userId               String?                @unique
+  approvalStatus       String?                @default("PENDING")
+  rejectionReason      String?
+  accountActive        Boolean                @default(true)
+  driverDetails        DriverDetails?
+  documents            DriverDocument[]
+  vehicle              Vehicle?
+  rides                Ride[]
+  payments             Payment[]
+  subscriptions        DriverSubscription[]
+  driverLocation       DriverLocation?
+  driverStatus         DriverStatus?
+  rideRequests         DriverRideRequests[]
+  assignedRides        RideRequest[]          @relation("AssignedDriver")
+  bookings             Booking[]
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
 
+  @@index([userId])
+  @@index([approvalStatus])
   @@map("driver")
 }
 
