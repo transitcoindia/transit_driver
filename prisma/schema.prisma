@@ -37,6 +37,8 @@ model Driver {
   bookings       Booking[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  @@map("Driver")
 }
 
 model Verification {
@@ -84,6 +86,7 @@ model DriverDetails {
 
   @@index([isAvailable, isVerified])
   @@index([city, isAvailable])
+  @@map("DriverDetails")
 }
 
 model DriverDocument {
@@ -100,6 +103,7 @@ model DriverDocument {
   verifiedDate      DateTime?
 
   @@index([driverId])
+  @@map("DriverDocument")
 }
 
 model DriverSubscription {
