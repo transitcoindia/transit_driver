@@ -1,7 +1,6 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 // import morgan from 'morgan';
-import { PrismaClient } from '@prisma/client';
 import { createServer } from 'http';
 import dotenv from 'dotenv';
 import  driverRoutes  from './routes/driverRoutes'
@@ -13,9 +12,6 @@ dotenv.config();
 // Initialize Express app
 const app: Express = express();
 const httpServer = createServer(app);
-  
-// Initialize Prisma
-const prisma = new PrismaClient();
 
 // Initialize Socket.IO
 // initializeSocketServer(httpServer);
@@ -28,10 +24,9 @@ app.use(express.json());
 // Routes
 app.use('/api/driver', driverRoutes);
 
-// Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+// Health check routes
+import healthRoutes from './routes/healthRoutes';
+app.use('/', healthRoutes);
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
@@ -45,6 +40,6 @@ app.get('/', (req: Request, res: Response) => {
 
 // Start server
 const PORT = process.env.PORT || 3000;
-httpServer.listen(PORT, () => {
-  console.log(`Server running on port http://localhost:${PORT}`);
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
 });
