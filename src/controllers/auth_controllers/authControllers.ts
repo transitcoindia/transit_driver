@@ -100,25 +100,48 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
             }
         });
     } catch (error) {
-        console.error('Registration error:', error);
+        // Comprehensive error logging (using both console.log and console.error for PM2)
+        const errorLog = `=== REGISTRATION ERROR START ===
+Error type: ${error?.constructor?.name}
+Error message: ${error instanceof Error ? error.message : String(error)}
+Error stack: ${error instanceof Error ? error.stack : 'No stack trace'}`;
+        
+        console.log(errorLog);
+        console.error(errorLog);
+        
+        try {
+            console.log('Error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+        } catch (e) {
+            console.log('Error object (stringified):', String(error));
+        }
         
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            console.error('Prisma error code:', error.code);
-            console.error('Prisma error message:', error.message);
+            const prismaLog = `Prisma error code: ${error.code}
+Prisma error message: ${error.message}
+Prisma error meta: ${JSON.stringify(error.meta)}`;
+            console.log(prismaLog);
+            console.error(prismaLog);
             if (error.code === 'P2002') {
+                console.log('=== REGISTRATION ERROR END ===');
                 return next(new AppError('Email or phone number already exists', 400));
             }
         }
 
         if (error instanceof AppError) {
+            console.log('=== REGISTRATION ERROR END ===');
             return next(error);
         }
 
-        // Log full error details for debugging
-        if (error instanceof Error) {
-            console.error('Error stack:', error.stack);
+        // Check for Zod validation errors
+        if (error && typeof error === 'object' && 'issues' in error) {
+            const zodLog = `Zod validation error: ${JSON.stringify((error as any).issues, null, 2)}`;
+            console.log(zodLog);
+            console.error(zodLog);
+            console.log('=== REGISTRATION ERROR END ===');
+            return next(new AppError('Validation failed: ' + JSON.stringify((error as any).issues), 400));
         }
 
+        console.log('=== REGISTRATION ERROR END ===');
         return next(new AppError('An error occurred during registration', 500));
     }
 };
