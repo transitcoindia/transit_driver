@@ -100,7 +100,11 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
             }
         });
     } catch (error) {
+        console.error('Registration error:', error);
+        
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
+            console.error('Prisma error code:', error.code);
+            console.error('Prisma error message:', error.message);
             if (error.code === 'P2002') {
                 return next(new AppError('Email or phone number already exists', 400));
             }
@@ -108,6 +112,11 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
 
         if (error instanceof AppError) {
             return next(error);
+        }
+
+        // Log full error details for debugging
+        if (error instanceof Error) {
+            console.error('Error stack:', error.stack);
         }
 
         return next(new AppError('An error occurred during registration', 500));
