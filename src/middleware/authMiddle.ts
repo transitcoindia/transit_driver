@@ -11,9 +11,9 @@ declare global {
     interface Request {
       driver?: {
         id: string;
-        email: string;
+        email: string | null;
         name: string;
-        phoneNumber: string;
+        phoneNumber: string | null;
         phoneNumberVerified: boolean;
       };
     }

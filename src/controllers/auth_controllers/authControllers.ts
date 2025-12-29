@@ -11,6 +11,7 @@ import { driverDocumentSchema, driverSignupSchema, driverVehicleInfoSchema } fro
 import { sendOtp } from '../../utils/otpService';
 import { OAuth2Client } from 'google-auth-library';
 import { addHours, isAfter } from 'date-fns';
+import { generateUserId } from '../../utils/generateUserId';
 
 const client = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
@@ -26,8 +27,8 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
         const validatedData = driverSignupSchema.parse(req.body);
         const { email, firstName, lastName, password, confirmPassword, phoneNumber } = validatedData;
 
-        // Check if the email already exists
-        const existingUser = await prisma.driver.findUnique({ where: { email } });
+        // Check if the email already exists in User table
+        const existingUser = await prisma.user.findUnique({ where: { email } });
         if (existingUser) {
             return next(new AppError('Email already exists', 400));
         }
@@ -35,9 +36,9 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
             return next(new AppError('Passwords do not match', 400));
         }
 
-        // Check if phone number already exists
+        // Check if phone number already exists in User table
         if (phoneNumber) {
-            const existingPhone = await prisma.driver.findFirst({ where: { phoneNumber } });
+            const existingPhone = await prisma.user.findFirst({ where: { phoneNumber } });
             if (existingPhone) {
                 return next(new AppError('Phone number already exists', 400));
             }
@@ -45,21 +46,40 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Create user with isDriver flag
-        const driver = await prisma.driver.create({
+        // Generate custom user ID (D-001, D-002, etc.)
+        const customId = await generateUserId(prisma, false, true);
+
+        // First create User with isDriver flag
+        const user = await prisma.user.create({
             data: {
+                id: customId,
                 email,
                 name: `${firstName} ${lastName}`,
                 password: hashedPassword,
                 emailVerified: false,
                 phoneNumber,
                 phoneNumberVerified: false,
+                isDriver: true, // Set driver flag
                 createdAt: new Date(),
                 updatedAt: new Date(),
             },
         });
 
-        const verificationToken = generateToken(driver.id);
+        // Then create Driver linked to User
+        const driver = await prisma.driver.create({
+            data: {
+                userId: user.id, // Link to User
+                name: `${firstName} ${lastName}`,
+                email,
+                phoneNumber,
+                emailVerified: false,
+                phoneNumberVerified: false,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            },
+        });
+
+        const verificationToken = generateToken(user.id);
 
         // Send verification email
         await sendDriverVerificationEmail(email, verificationToken);
@@ -183,6 +203,14 @@ export const verifyRegistrationOTP = async (req: Request, res: Response, next: N
             return next(new AppError('Driver not found', 404));
         }
 
+        // Update User's phone verification status
+        if (driver.userId) {
+            await prisma.user.update({
+                where: { id: driver.userId },
+                data: { phoneNumberVerified: true }
+            });
+        }
+
         // Update driver's phone verification status
         await prisma.driver.update({
             where: { id: driver.id },
@@ -230,12 +258,24 @@ export const verifyDriverEmail = async (req: Request, res: Response) => {
     try {
         // Verify the token and assert the type
         const decoded = verifyToken(token as string) as JwtPayload;
+        const userId = (decoded as JwtPayload).id;
 
-        // Update user to set email as verified
-        await prisma.driver.update({
-            where: { id: (decoded as JwtPayload).id },
+        // Update User to set email as verified
+        await prisma.user.update({
+            where: { id: userId },
             data: { emailVerified: true },
         });
+
+        // Also update Driver emailVerified to keep in sync
+        const driver = await prisma.driver.findFirst({
+            where: { userId: userId }
+        });
+        if (driver) {
+            await prisma.driver.update({
+                where: { id: driver.id },
+                data: { emailVerified: true },
+            });
+        }
 
         // Redirect to frontend driver onboarding page
         return res.redirect(`${process.env.FRONTEND_APP_URL}/verified-email?success=true`);
@@ -250,36 +290,42 @@ export const loginWithEmail = async (req: Request, res: Response, next: NextFunc
     try {
         const { email, password } = req.body;
 
-        // Find driver by email
-        const driver = await prisma.driver.findUnique({
+        // Find user by email (password is stored in User table)
+        const user = await prisma.user.findUnique({
             where: { email },
             include: {
-                driverDetails: true,
-                driverStatus: true
+                driver: {
+                    include: {
+                        driverDetails: true,
+                        driverStatus: true
+                    }
+                }
             }
         });
 
-        if (!driver) {
+        if (!user || !user.isDriver || !user.driver) {
             return res.status(401).json({
                 success: false,
                 message: 'Invalid email or password'
             });
         }
 
-        if(driver.emailVerified === false) {
+        const driver = user.driver;
+
+        if(user.emailVerified === false) {
             return res.status(401).json({
                 success: false,
                 message: 'Please verify your email'
             })
         }
 
-        // Verify password
-        const isValidPassword = await bcrypt.compare(password, driver.password);
+        // Verify password from User table
+        const isValidPassword = await bcrypt.compare(password, user.password);
         if (!isValidPassword) {
             return next(new AppError('Invalid email or password', 401));
         }
 
-        // Generate access token
+        // Generate access token using driver.id (keeping existing flow)
         const accessToken = generateAccessToken(driver.id);
 
         return res.status(200).json({
