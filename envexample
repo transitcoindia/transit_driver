@@ -1,0 +1,22 @@
+﻿# Environment Variables Example
+# Copy this file to .env and fill in your values
+
+# Database
+DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+DIRECT_URL=postgresql://user:password@localhost:5432/dbname
+
+# JWT Secrets
+JWT_SECRET=your-secret-key-here
+JWT_REFRESH_SECRET=your-refresh-secret-here
+
+# Server
+PORT=3000
+NODE_ENV=production
+
+# Google OAuth (use placeholder values)
+GOOGLE_CLIENT_ID=your-google-client-id-here
+GOOGLE_CLIENT_SECRET=your-google-client-secret-here
+
+# Other services
+REDIS_URL=redis://localhost:6379
+

@@ -103,3 +103,11 @@ export const multipleDocumentDataSchema = z.array(z.object({
 export const verificationTokenSchema = z.object({
     token: z.string().min(1, "Verification token is required"),
 });
+
+// Subscription activation validation schema
+export const subscriptionActivateSchema = z.object({
+    amount: z.number().positive("Amount must be positive"),
+    paymentMode: z.string().min(1, "Payment mode is required"),
+    transactionId: z.string().optional(),
+    durationDays: z.number().int().min(1).max(365).optional().default(30), // Default 30 days
+});

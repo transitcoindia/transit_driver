@@ -9,9 +9,9 @@ generator client {
 }
 
 datasource db {
-  provider   = "postgresql"
-  url        = env("DATABASE_URL")
-  directUrl  = env("DIRECT_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -101,20 +101,20 @@ model Otp {
 
 // Cab Related schema - Unified Booking model (transit_backend + transit_driver)
 model Booking {
-  id         String   @id @default(cuid())
-  
+  id String @id @default(cuid())
+
   // transit_backend fields
-  bookingId  String?  @unique // ONDC booking ID
-  orderRefId String?  @unique // ONDC order reference
+  bookingId  String? @unique // ONDC booking ID
+  orderRefId String? @unique // ONDC order reference
   otp        String?
-  
+
   // transit_driver fields
-  rideRequestId String? @unique // Link to RideRequest (for transit_driver)
+  rideRequestId String?      @unique // Link to RideRequest (for transit_driver)
   rideRequest   RideRequest? @relation(fields: [rideRequestId], references: [id])
 
-  status     String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  status    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Associations from transit_backend
   userId   String?
@@ -125,10 +125,10 @@ model Booking {
   driver   Driver? @relation(fields: [driverId], references: [id])
 
   // Associations from transit_driver
-  riderId String? // RiderInfo relation (for transit_driver)
-  rider   RiderInfo? @relation(fields: [riderId], references: [id])
-  vehicleId String? @unique
-  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id])
+  riderId   String? // RiderInfo relation (for transit_driver)
+  rider     RiderInfo? @relation(fields: [riderId], references: [id])
+  vehicleId String?    @unique
+  vehicle   Vehicle?   @relation(fields: [vehicleId], references: [id])
 
   // Trip details from transit_backend
   tripType          String?
@@ -137,12 +137,12 @@ model Booking {
   distance          Float?
 
   // Trip details from transit_driver
-  startTime     DateTime?
-  endTime       DateTime?
+  startTime      DateTime?
+  endTime        DateTime?
   actualDistance Float?
   actualDuration Int?
-  finalFare     Float?
-  paymentStatus String? @default("PENDING") // PENDING, PAID, FAILED
+  finalFare      Float?
+  paymentStatus  String?   @default("PENDING") // PENDING, PAID, FAILED
 
   // Location details
   pickupLatitude  Float?
@@ -190,7 +190,7 @@ model Cab {
   insuranceStatus        Boolean   @default(false)
   insuranceExpiryDate    DateTime?
   registrationExpiryDate DateTime?
-  cabImages             Json?      // Will store { cover: string[], interior: string[], exterior: string[] }
+  cabImages              Json? // Will store { cover: string[], interior: string[], exterior: string[] }
 
   // Update cab location
   lastLatitude  String?
@@ -213,23 +213,23 @@ model Cab {
 }
 
 model Driver {
-  id            String   @id @default(cuid())
+  id            String  @id @default(cuid())
   name          String
   provider      String?
   contactCode   String?
-  contactNumber String?  // Can be used by transit_backend
-  
+  contactNumber String? // Can be used by transit_backend
+
   // Standalone driver account fields (for transit_driver)
-  email               String?  @unique // For transit_driver standalone accounts
-  password            String?  // Hashed password for transit_driver
-  emailVerified       Boolean  @default(false)
-  phoneNumber         String?  @unique // For transit_driver (separate from contactNumber)
-  phoneNumberVerified Boolean  @default(false)
-  resetToken          String?  @unique
+  email               String?   @unique // For transit_driver standalone accounts
+  password            String? // Hashed password for transit_driver
+  emailVerified       Boolean   @default(false)
+  phoneNumber         String?   @unique // For transit_driver (separate from contactNumber)
+  phoneNumberVerified Boolean   @default(false)
+  resetToken          String?   @unique
   resetTokenExpiresAt DateTime?
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
 
   // Driver verification and onboarding fields
   userId            String? @unique // Link to User account (for transit_backend)
@@ -247,25 +247,25 @@ model Driver {
   panNumber    String?
 
   // Real-time location fields
-  currentLat   Float?   
-  currentLng   Float?  
+  currentLat Float?
+  currentLng Float?
 
   // Relations from transit_backend
-  bookings           Booking[]
-  documents          DriverDocument[]
-  DriverSubscription DriverSubscription[]
+  bookings             Booking[]
+  documents            DriverDocument[]
+  DriverSubscription   DriverSubscription[]
   SubscriptionPayments SubscriptionPayment[]
-  cab                Cab?
-  rides              Ride[]
-  vehicle            Vehicle?
+  cab                  Cab?
+  rides                Ride[]
+  vehicle              Vehicle?
 
   // Relations from transit_driver
-  driverDetails      DriverDetails?
-  driverLocation     DriverLocation?
-  driverStatus       DriverStatus?
-  payments           Payment[]
-  rideRequests       DriverRideRequests[]
-  assignedRides      RideRequest[] @relation("AssignedDriver")
+  driverDetails  DriverDetails?
+  driverLocation DriverLocation?
+  driverStatus   DriverStatus?
+  payments       Payment[]
+  rideRequests   DriverRideRequests[]
+  assignedRides  RideRequest[]        @relation("AssignedDriver")
 
   @@map("driver")
 }
@@ -290,20 +290,20 @@ model DriverDocument {
 
 //subsciption model for driver
 model DriverSubscription {
-  id           String   @id @default(cuid())
-  driverId     String
-  driver       Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  startTime    DateTime
-  expire       DateTime
-  amountPaid   Float
-  status       statusDriver  // ACTIVE, EXPIRED, CANCELLED
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @default(now())
+  id         String       @id @default(cuid())
+  driverId   String
+  driver     Driver       @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  startTime  DateTime
+  expire     DateTime
+  amountPaid Float
+  status     statusDriver // ACTIVE, EXPIRED, CANCELLED
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @default(now())
 
-  paymentId    String?
-  paymentMode  String? 
+  paymentId   String?
+  paymentMode String?
 
-  autoRenewed  Boolean      @default(false)
+  autoRenewed Boolean @default(false)
 
   //track remaining time if subscription is paused
   remainingMinutes Int?
@@ -312,23 +312,23 @@ model DriverSubscription {
   @@index([status, expire])
 }
 
-enum statusDriver  {
+enum statusDriver {
   ACTIVE
   EXPIRED
-  CANCELLED 
+  CANCELLED
 }
 
 // payment transaction model to track payments
 model SubscriptionPayment {
-  id              String   @id @default(cuid())
-  driverId        String
-  driver          Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  amount          Float
-  paymentMode     String
-  transactionId   String?  
-  status          String   // SUCCESS, FAILED, PENDING
-  createdAt       DateTime @default(now())
-  
+  id            String   @id @default(cuid())
+  driverId      String
+  driver        Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  amount        Float
+  paymentMode   String
+  transactionId String?
+  status        String // SUCCESS, FAILED, PENDING
+  createdAt     DateTime @default(now())
+
   @@index([driverId])
 }
 
@@ -363,65 +363,65 @@ model Fare {
 }
 
 model Vehicle {
-  id                String   @id @default(cuid())
-  make              String
-  model             String
-  year              Int
-  color             String? // Made optional (was required in transit_driver)
-  licensePlate      String   @unique
-  vehicleType       String   // e.g., "sedan", "suv", "hatchback"
-  
+  id           String  @id @default(cuid())
+  make         String
+  model        String
+  year         Int
+  color        String? // Made optional (was required in transit_driver)
+  licensePlate String  @unique
+  vehicleType  String // e.g., "sedan", "suv", "hatchback"
+
   // Vehicle information
-  hasCNG            Boolean  @default(false)
-  hasElectric       Boolean  @default(false)
-  roofTop           Boolean  @default(false) // From transit_driver
-  fuelType          String?
-  seatingCapacity   Int?
-  insuranceStatus   Boolean  @default(false)
-  insuranceExpiry   DateTime? // From transit_backend
-  insuranceExpiryDate DateTime? // From transit_driver (alias)
-  registrationExpiry DateTime? // From transit_backend
+  hasCNG                 Boolean   @default(false)
+  hasElectric            Boolean   @default(false)
+  roofTop                Boolean   @default(false) // From transit_driver
+  fuelType               String?
+  seatingCapacity        Int?
+  insuranceStatus        Boolean   @default(false)
+  insuranceExpiry        DateTime? // From transit_backend
+  insuranceExpiryDate    DateTime? // From transit_driver (alias)
+  registrationExpiry     DateTime? // From transit_backend
   registrationExpiryDate DateTime? // From transit_driver (alias)
-  vehicleImages     Json?    // { cover: string[], interior: string[], exterior: string[] }
+  vehicleImages          Json? // { cover: string[], interior: string[], exterior: string[] }
 
   // Operational status
-  isActive          Boolean  @default(true)
-  isAvailable       Boolean  @default(true)
-  isInService       Boolean  @default(true) // From transit_driver
-  lastMaintenance   DateTime? // From transit_driver
-  nextMaintenance   DateTime? // From transit_driver
+  isActive        Boolean   @default(true)
+  isAvailable     Boolean   @default(true)
+  isInService     Boolean   @default(true) // From transit_driver
+  lastMaintenance DateTime? // From transit_driver
+  nextMaintenance DateTime? // From transit_driver
 
   // Current status (from transit_driver)
-  currentLocation   Json?    // {latitude: number, longitude: number}
-  currentSpeed      Float?
-  currentBattery    Float?   // For electric vehicles
-  currentFuel       Float?   // For fuel vehicles
+  currentLocation Json? // {latitude: number, longitude: number}
+  currentSpeed    Float?
+  currentBattery  Float? // For electric vehicles
+  currentFuel     Float? // For fuel vehicles
 
   // Operational metrics (from transit_driver)
-  totalTrips        Int      @default(0)
-  totalDistance     Float    @default(0)
-  totalEarnings     Float    @default(0)
-  averageRating     Float    @default(0)
+  totalTrips    Int   @default(0)
+  totalDistance Float @default(0)
+  totalEarnings Float @default(0)
+  averageRating Float @default(0)
 
   // Additional features (from transit_driver)
-  features          Json?    // AC, music, wifi, etc.
-  amenities         Json?    // Water, tissues, etc.
-  documents         Json?    // Additional vehicle documents
-  serviceHistory    Json?    // Maintenance and service records
+  features       Json? // AC, music, wifi, etc.
+  amenities      Json? // Water, tissues, etc.
+  documents      Json? // Additional vehicle documents
+  serviceHistory Json? // Maintenance and service records
 
   // Zone and area (from transit_driver)
-  currentZoneId     String?
-  currentZone       ServiceZone? @relation(fields: [currentZoneId], references: [id])
+  currentZoneId String?
+  currentZone   ServiceZone? @relation(fields: [currentZoneId], references: [id])
 
   // Relationships
-  driverId          String   @unique
-  driver            Driver   @relation(fields: [driverId], references: [id])
-  driverLocation    DriverLocation? // From transit_driver
-  rides             Ride[]
-  bookings          Booking[] // From transit_driver
+  driverId       String          @unique
+  driver         Driver          @relation(fields: [driverId], references: [id])
+  driverLocation DriverLocation? // From transit_driver
+  rides          Ride[]
+  bookings       Booking[] // From transit_driver
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([isActive, isAvailable])
   @@index([currentZoneId])
@@ -430,67 +430,67 @@ model Vehicle {
 }
 
 model ServiceZone {
-  id                String   @id @default(cuid())
-  name              String
-  city              String
-  country           String   @default("India")
-  boundary          Json     // Polygon or geojson (from transit_backend)
-  coordinates       Json?    // Store polygon coordinates as JSON (from transit_driver)
+  id          String @id @default(cuid())
+  name        String
+  city        String
+  country     String @default("India")
+  boundary    Json // Polygon or geojson (from transit_backend)
+  coordinates Json? // Store polygon coordinates as JSON (from transit_driver)
 
-  isActive          Boolean  @default(true)
-  baseFare          Float
-  perKmRate         Float
-  perMinRate        Float
-  minFare           Float
-  maxFare           Float?
-  waitingChargePerMin Float @default(0) // From transit_driver
-  cancellationFee    Float @default(0) // From transit_driver
+  isActive            Boolean @default(true)
+  baseFare            Float
+  perKmRate           Float
+  perMinRate          Float
+  minFare             Float
+  maxFare             Float?
+  waitingChargePerMin Float   @default(0) // From transit_driver
+  cancellationFee     Float   @default(0) // From transit_driver
 
-  surgeMultiplier   Float    @default(1.0)
-  surgeActive       Boolean  @default(false) // From transit_driver
-  surgeReason       String? // From transit_driver
-  surgeStartTime    DateTime? // From transit_driver
-  surgeEndTime      DateTime? // From transit_driver
+  surgeMultiplier Float     @default(1.0)
+  surgeActive     Boolean   @default(false) // From transit_driver
+  surgeReason     String? // From transit_driver
+  surgeStartTime  DateTime? // From transit_driver
+  surgeEndTime    DateTime? // From transit_driver
 
-  maxDrivers        Int? // From transit_driver
-  currentDrivers    Int  @default(0) // From transit_driver
-  minDrivers        Int  @default(0) // From transit_driver
+  maxDrivers     Int? // From transit_driver
+  currentDrivers Int  @default(0) // From transit_driver
+  minDrivers     Int  @default(0) // From transit_driver
 
-  demandLevel       Float @default(1.0) // From transit_driver
-  trafficFactor     Float @default(1.0) // From transit_driver
-  weatherFactor     Float @default(1.0) // From transit_driver
+  demandLevel   Float @default(1.0) // From transit_driver
+  trafficFactor Float @default(1.0) // From transit_driver
+  weatherFactor Float @default(1.0) // From transit_driver
 
-  operatingHours    Json? // Store operating hours for each day (from transit_driver)
-  holidays          Json? // Store holiday dates (from transit_driver)
-  bbox              Json? // From transit_driver
+  operatingHours Json? // Store operating hours for each day (from transit_driver)
+  holidays       Json? // Store holiday dates (from transit_driver)
+  bbox           Json? // From transit_driver
 
-  rides             Ride[]
-  vehicles          Vehicle[] // From transit_driver
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  rides     Ride[]
+  vehicles  Vehicle[] // From transit_driver
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@index([city, isActive])
   @@index([demandLevel, isActive])
 }
 
 model Ride {
-  id                String   @id @default(cuid())
-  rideCode          String?  @unique // Human-readable code for reference (from transit_backend)
-  status            String   // "pending", "accepted", "in_progress", "completed", "cancelled"
-  
+  id       String  @id @default(cuid())
+  rideCode String? @unique // Human-readable code for reference (from transit_backend)
+  status   String // "pending", "accepted", "in_progress", "completed", "cancelled"
+
   // Location fields - unified
-  pickupLatitude    Float // Required in transit_backend
-  pickupLongitude   Float // Required in transit_backend
-  pickupLocation    String? // From transit_driver (string format)
-  pickupAddress     String?
-  dropLatitude      Float?
-  dropLongitude     Float?
-  dropoffLocation   String? // From transit_driver (string format)
-  dropAddress       String?
-  
-  startTime         DateTime?
-  endTime           DateTime?
-  
+  pickupLatitude  Float // Required in transit_backend
+  pickupLongitude Float // Required in transit_backend
+  pickupLocation  String? // From transit_driver (string format)
+  pickupAddress   String?
+  dropLatitude    Float?
+  dropLongitude   Float?
+  dropoffLocation String? // From transit_driver (string format)
+  dropAddress     String?
+
+  startTime DateTime?
+  endTime   DateTime?
+
   // Fare and distance - unified
   estimatedFare     Float?
   actualFare        Float? // From transit_backend
@@ -498,46 +498,46 @@ model Ride {
   estimatedDistance Float?
   actualDistance    Float? // From transit_backend
   distance          Float? // From transit_driver (alias)
-  estimatedDuration Int?     // in minutes
-  actualDuration    Int?     // in minutes
-  duration          Int?      // Duration in minutes (from transit_driver, alias)
-  
-  baseFare          Float?
-  surgeMultiplier   Float    @default(1.0)
-  waitingTime       Int?     // in minutes
-  cancellationFee   Float?
+  estimatedDuration Int? // in minutes
+  actualDuration    Int? // in minutes
+  duration          Int? // Duration in minutes (from transit_driver, alias)
+
+  baseFare           Float?
+  surgeMultiplier    Float   @default(1.0)
+  waitingTime        Int? // in minutes
+  cancellationFee    Float?
   cancellationReason String?
-  cancelledBy       String?  // "user", "driver", "system"
-  paymentStatus     String?  // "pending", "paid", "failed", etc.
-  paymentMethod     String?  // "cash", "wallet", "card", etc.
-  transactionId     String?  // Payment gateway reference
+  cancelledBy        String? // "user", "driver", "system"
+  paymentStatus      String? // "pending", "paid", "failed", etc.
+  paymentMethod      String? // "cash", "wallet", "card", etc.
+  transactionId      String? // Payment gateway reference
 
   // Relations - Support both User (transit_backend) and RiderInfo (transit_driver)
-  driverId          String
-  driver            Driver   @relation(fields: [driverId], references: [id])
-  
+  driverId String
+  driver   Driver @relation(fields: [driverId], references: [id])
+
   // Rider relation - User (transit_backend)
-  riderId           String? // Optional to support both User and RiderInfo
-  rider             User?   @relation(fields: [riderId], references: [id])
-  
+  riderId String? // Optional to support both User and RiderInfo
+  rider   User?   @relation(fields: [riderId], references: [id])
+
   // Rider relation - RiderInfo (transit_driver) 
-  riderInfoId       String? // Optional to support both User and RiderInfo
-  riderInfo         RiderInfo? @relation(fields: [riderInfoId], references: [id])
-  
-  vehicleId         String?
-  vehicle           Vehicle? @relation(fields: [vehicleId], references: [id])
-  serviceZoneId     String? // Used by both services (zoneId in transit_driver maps to this)
-  serviceZone       ServiceZone? @relation(fields: [serviceZoneId], references: [id])
-  payment           Payment? // From transit_driver
+  riderInfoId String? // Optional to support both User and RiderInfo
+  riderInfo   RiderInfo? @relation(fields: [riderInfoId], references: [id])
+
+  vehicleId     String?
+  vehicle       Vehicle?     @relation(fields: [vehicleId], references: [id])
+  serviceZoneId String? // Used by both services (zoneId in transit_driver maps to this)
+  serviceZone   ServiceZone? @relation(fields: [serviceZoneId], references: [id])
+  payment       Payment? // From transit_driver
 
   // Route and tracking
-  route             Json?    // Polyline or array of coordinates
-  waypoints         Json?    // Intermediate stops
+  route                 Json? // Polyline or array of coordinates
+  waypoints             Json? // Intermediate stops
   driverLocationUpdates Json? // Array of {lat, lng, timestamp}
 
   // Timestamps
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status, createdAt])
   @@index([driverId, status])
@@ -566,7 +566,7 @@ model DriverDetails {
   city          String?
   state         String?
   country       String    @default("India")
-  bankDetails   Json?     // Store encrypted bank account details
+  bankDetails   Json? // Store encrypted bank account details
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -576,10 +576,10 @@ model DriverDetails {
 
 // Real-time driver location tracking (transit_driver)
 model DriverLocation {
-  id       String  @id @default(cuid())
-  driverId String  @unique
-  driver   Driver  @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  vehicleId String? @unique
+  id        String   @id @default(cuid())
+  driverId  String   @unique
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  vehicleId String?  @unique
   vehicle   Vehicle? @relation(fields: [vehicleId], references: [id])
 
   // Location data
@@ -618,11 +618,11 @@ model DriverStatus {
   driverId String @unique
   driver   Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
 
-  status     DriverStatusType @default(OFFLINE)
-  lastPingAt DateTime         @default(now())
-  totalOnlineHours Float      @default(0)
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  status           DriverStatusType @default(OFFLINE)
+  lastPingAt       DateTime         @default(now())
+  totalOnlineHours Float            @default(0)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   @@map("driver_status")
 }
@@ -631,10 +631,10 @@ model DriverStatus {
 model RideRequest {
   id        String @id @default(cuid())
   requestId String @unique @default(cuid())
-  
+
   // Rider relation
-  rider         RiderInfo @relation(fields: [riderId], references: [id])
-  riderId       String
+  rider   RiderInfo @relation(fields: [riderId], references: [id])
+  riderId String
 
   // Trip details
   pickupLatitude  Float
@@ -696,7 +696,7 @@ model DriverRideRequests {
 
   distanceToPickup Float?
   etaToPickup      Int?
-  rejectionReason String?
+  rejectionReason  String?
 
   @@unique([driverId, rideRequestId])
   @@index([rideRequestId, sentAt])
@@ -714,7 +714,7 @@ model TripLog {
   timestamp DateTime @default(now())
 
   eventType String
-  metadata Json?
+  metadata  Json?
 
   @@index([bookingId, timestamp])
   @@index([timestamp])
@@ -723,25 +723,25 @@ model TripLog {
 
 // Rider info model for tracking rider details (transit_driver)
 model RiderInfo {
-  id            String    @id @default(cuid())
-  riderId       String    @unique // External reference to rider service
-  firstName     String
-  lastName      String
-  phoneNumber   String
-  profileImage  String?
-  rating        Float     @default(0)
-  totalRides    Int       @default(0)
-  
+  id           String  @id @default(cuid())
+  riderId      String  @unique // External reference to rider service
+  firstName    String
+  lastName     String
+  phoneNumber  String
+  profileImage String?
+  rating       Float   @default(0)
+  totalRides   Int     @default(0)
+
   // Track ride history
-  rides         Ride[]
-  rideRequests  RideRequest[]
-  bookings      Booking[]
-  
+  rides        Ride[]
+  rideRequests RideRequest[]
+  bookings     Booking[]
+
   // Track payment history
-  payments      Payment[]
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([riderId])
   @@index([phoneNumber])
@@ -750,31 +750,31 @@ model RiderInfo {
 
 // Payment model (transit_driver)
 model Payment {
-  id            String    @id @default(cuid())
+  id            String  @id @default(cuid())
   amount        Float
-  status        String    // "pending", "completed", "failed", "refunded"
-  paymentMethod String    // "credit_card", "debit_card", "cash", "wallet"
-  transactionId String?   @unique
-  currency      String    @default("INR")
+  status        String // "pending", "completed", "failed", "refunded"
+  paymentMethod String // "credit_card", "debit_card", "cash", "wallet"
+  transactionId String? @unique
+  currency      String  @default("INR")
   description   String?
-  metadata      Json?     // Additional payment details
-  
+  metadata      Json? // Additional payment details
+
   // Ride relation
-  ride          Ride      @relation(fields: [rideId], references: [id])
-  rideId        String    @unique
-  
+  ride   Ride   @relation(fields: [rideId], references: [id])
+  rideId String @unique
+
   // Driver relation
-  driver        Driver    @relation(fields: [driverId], references: [id])
-  driverId      String
-  
+  driver   Driver @relation(fields: [driverId], references: [id])
+  driverId String
+
   // Rider relation
-  rider         RiderInfo @relation(fields: [riderId], references: [id])
-  riderId       String
-  
-  refundReason  String?
-  refundedAt    DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  rider   RiderInfo @relation(fields: [riderId], references: [id])
+  riderId String
+
+  refundReason String?
+  refundedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([status, createdAt])
   @@index([driverId, status])
@@ -787,60 +787,60 @@ model OndcReconciliation {
   transactionId String   @unique
   bppId         String
   bppUri        String
-  status        String   // PENDING, COMPLETED, FAILED
+  status        String // PENDING, COMPLETED, FAILED
   totalAmount   Decimal?
   currency      String   @default("INR")
-  
+
   // Legacy DB column retained for compatibility; ignored by Prisma Client
-  ordersLegacy  Json?    @map("orders") @ignore
-  
+  ordersLegacy Json? @map("orders") @ignore
+
   // Timestamps
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Relations
-  orders        OndcReconciliationOrder[]
-  
+  orders OndcReconciliationOrder[]
+
   @@index([status, createdAt])
   @@map("ondcReconciliation")
 }
 
 model OndcReconciliationOrder {
-  id                String   @id @default(cuid())
-  reconciliationId  String
-  orderId           String
-  amount            Decimal
-  currency          String   @default("INR")
-  status            String   // PENDING, COMPLETED, FAILED
-  
+  id               String  @id @default(cuid())
+  reconciliationId String
+  orderId          String
+  amount           Decimal
+  currency         String  @default("INR")
+  status           String // PENDING, COMPLETED, FAILED
+
   // Timestamps
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Relations
-  reconciliation    OndcReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
-  settlements       OndcReconciliationSettlement[]
-  
+  reconciliation OndcReconciliation             @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  settlements    OndcReconciliationSettlement[]
+
   @@index([reconciliationId])
   @@index([orderId])
 }
 
 model OndcReconciliationSettlement {
-  id                String   @id @default(cuid())
-  orderId           String
-  settlementId      String
-  paymentId         String
-  amount            Decimal
-  currency          String   @default("INR")
-  status            String   // PENDING, COMPLETED, FAILED
-  
+  id           String  @id @default(cuid())
+  orderId      String
+  settlementId String
+  paymentId    String
+  amount       Decimal
+  currency     String  @default("INR")
+  status       String // PENDING, COMPLETED, FAILED
+
   // Timestamps
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Relations
-  order             OndcReconciliationOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  
+  order OndcReconciliationOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
   @@index([orderId])
   @@index([settlementId])
 }
