@@ -1,5 +1,5 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
-import cors from 'cors';
+import cors, { CorsOptions } from 'cors';
 // import morgan from 'morgan';
 import { createServer } from 'http';
 import dotenv from 'dotenv';
@@ -16,8 +16,19 @@ const httpServer = createServer(app);
 // Initialize Socket.IO
 // initializeSocketServer(httpServer);
 
-// Middleware
-app.use(cors());
+// CORS Configuration
+// Allow all origins for now - can be restricted in production via CORS_ORIGIN env var
+const corsOptions: CorsOptions = {
+  origin: process.env.CORS_ORIGIN || true, // Allow all origins if not specified
+  credentials: false, // Set to false when using Bearer tokens (not cookies)
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  maxAge: 86400, // 24 hours
+};
+
+// Middleware - Apply CORS before other middleware
+app.use(cors(corsOptions));
 app.use(express.json());
 //app.use(morgan('dev'));
 
