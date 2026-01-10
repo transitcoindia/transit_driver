@@ -45,7 +45,7 @@ import {
     getCurrentSubscription,
 } from '../controllers/ride_controllers/subscription';
 import { updateDriverProfile } from '../controllers/auth_controllers/profile';
-import { getDocumentStatus, getVehicleImages, uploadDocuments } from '../controllers/auth_controllers/documents';
+import { getDocumentStatus, getVehicleImages, uploadDocuments, createOrUpdateVehicleInfo } from '../controllers/auth_controllers/documents';
 import { authenticate, authenticateAdmin } from '../middleware/authMiddle';
 import {
     getAllDrivers,
@@ -116,6 +116,7 @@ router.get('/profile', authenticate as RequestHandler, getUserDetails as Request
 router.put('/profile', authenticate as RequestHandler, updateDriverProfile as RequestHandler);
 router.get('/documents/status', authenticate as RequestHandler, getDocumentStatus as RequestHandler);
 router.get('/documents/vehicleImages', authenticate as RequestHandler, getVehicleImages as RequestHandler);
+router.post('/documents/vehicleInfo', authenticate as RequestHandler, createOrUpdateVehicleInfo as RequestHandler);
 router.post('/documents/upload', authenticate as RequestHandler, documentUpload as any, uploadDocuments as RequestHandler);
 
 // Password reset routes

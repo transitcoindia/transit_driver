@@ -17,8 +17,18 @@ const app = (0, express_1.default)();
 const httpServer = (0, http_1.createServer)(app);
 // Initialize Socket.IO
 // initializeSocketServer(httpServer);
-// Middleware
-app.use((0, cors_1.default)());
+// CORS Configuration
+// Allow all origins for now - can be restricted in production via CORS_ORIGIN env var
+const corsOptions = {
+    origin: process.env.CORS_ORIGIN || true, // Allow all origins if not specified
+    credentials: false, // Set to false when using Bearer tokens (not cookies)
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range'],
+    maxAge: 86400, // 24 hours
+};
+// Middleware - Apply CORS before other middleware
+app.use((0, cors_1.default)(corsOptions));
 app.use(express_1.default.json());
 //app.use(morgan('dev'));
 // Routes

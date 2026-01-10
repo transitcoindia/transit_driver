@@ -72,6 +72,7 @@ router.get('/profile', authMiddle_1.authenticate, authControllers_1.getUserDetai
 router.put('/profile', authMiddle_1.authenticate, profile_1.updateDriverProfile);
 router.get('/documents/status', authMiddle_1.authenticate, documents_1.getDocumentStatus);
 router.get('/documents/vehicleImages', authMiddle_1.authenticate, documents_1.getVehicleImages);
+router.post('/documents/vehicleInfo', authMiddle_1.authenticate, documents_1.createOrUpdateVehicleInfo);
 router.post('/documents/upload', authMiddle_1.authenticate, documentUpload, documents_1.uploadDocuments);
 // Password reset routes
 router.post('/password-reset/request-otp', authControllers_1.sendResetEmailController);

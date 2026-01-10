@@ -3,6 +3,7 @@ import { prisma } from "../../prismaClient";
 import AppError from "../../utils/AppError";
 import { uploadToS3 } from "../../utils/s3Upload";
 import fs from "fs";
+import { driverVehicleInfoSchema } from "../../validator/driverValidation";
 
 /**
  * Get driver document status
@@ -451,6 +452,184 @@ export const uploadDocuments = async (
         500
       )
     );
+  }
+};
+
+/**
+ * Create or update vehicle information
+ * POST /api/driver/documents/vehicleInfo
+ */
+export const createOrUpdateVehicleInfo = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    if (!req.driver?.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Driver not authenticated",
+      });
+    }
+    const driverId = req.driver.id as string;
+
+    // Validate request body
+    const validatedData = driverVehicleInfoSchema.parse(req.body);
+    const {
+      model,
+      brand,
+      number,
+      year,
+      fuelType,
+      seatingCapacity,
+      hasCNG,
+      hasElectric,
+      roofTop,
+      insuranceStatus,
+      insuranceExpiryDate,
+      registrationExpiryDate,
+      drivingExperience,
+    } = validatedData;
+
+    // Check if vehicle already exists for this driver
+    const existingVehicle = await prisma.vehicle.findUnique({
+      where: { driverId: driverId },
+    });
+
+    // Determine vehicle type from model (simple mapping - can be enhanced)
+    const getVehicleType = (model: string): string => {
+      const modelLower = model.toLowerCase();
+      if (modelLower.includes('suv') || modelLower.includes('xuv')) return 'suv';
+      if (modelLower.includes('hatch') || modelLower.includes('hatchback')) return 'hatchback';
+      if (modelLower.includes('sedan')) return 'sedan';
+      if (modelLower.includes('van')) return 'van';
+      if (modelLower.includes('auto') || modelLower.includes('tuk')) return 'auto';
+      return 'sedan'; // Default
+    };
+
+    const vehicleType = getVehicleType(model);
+
+    // Prepare vehicle data
+    const vehicleData: any = {
+      make: brand,
+      model: model,
+      year: year,
+      licensePlate: number,
+      vehicleType: vehicleType,
+      fuelType: fuelType,
+      seatingCapacity: seatingCapacity,
+      hasCNG: hasCNG || false,
+      hasElectric: hasElectric || false,
+      roofTop: roofTop || false,
+      insuranceStatus: insuranceStatus || false,
+      driverId: driverId,
+      color: null, // Optional field
+      updatedAt: new Date(),
+    };
+
+    // Handle dates
+    if (insuranceExpiryDate) {
+      vehicleData.insuranceExpiryDate = new Date(insuranceExpiryDate);
+      vehicleData.insuranceExpiry = new Date(insuranceExpiryDate);
+    }
+    if (registrationExpiryDate) {
+      vehicleData.registrationExpiryDate = new Date(registrationExpiryDate);
+      vehicleData.registrationExpiry = new Date(registrationExpiryDate);
+    }
+
+    let vehicle;
+    if (existingVehicle) {
+      // Update existing vehicle
+      vehicle = await prisma.vehicle.update({
+        where: { id: existingVehicle.id },
+        data: vehicleData,
+        select: {
+          id: true,
+          make: true,
+          model: true,
+          year: true,
+          licensePlate: true,
+          vehicleType: true,
+          fuelType: true,
+          seatingCapacity: true,
+          hasCNG: true,
+          hasElectric: true,
+          roofTop: true,
+          insuranceStatus: true,
+          insuranceExpiryDate: true,
+          registrationExpiryDate: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    } else {
+      // Create new vehicle
+      vehicle = await prisma.vehicle.create({
+        data: vehicleData,
+        select: {
+          id: true,
+          make: true,
+          model: true,
+          year: true,
+          licensePlate: true,
+          vehicleType: true,
+          fuelType: true,
+          seatingCapacity: true,
+          hasCNG: true,
+          hasElectric: true,
+          roofTop: true,
+          insuranceStatus: true,
+          insuranceExpiryDate: true,
+          registrationExpiryDate: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    }
+
+    // Update driver's driving experience if provided
+    if (drivingExperience !== undefined) {
+      await prisma.driver.update({
+        where: { id: driverId },
+        data: {
+          drivingExperience: drivingExperience,
+        },
+      });
+    }
+
+    return res.status(existingVehicle ? 200 : 201).json({
+      success: true,
+      message: existingVehicle
+        ? "Vehicle information updated successfully"
+        : "Vehicle information created successfully",
+      data: {
+        vehicle: vehicle,
+      },
+    });
+  } catch (error: any) {
+    console.error("Error creating/updating vehicle info:", error);
+    
+    // Handle validation errors
+    if (error.name === "ZodError") {
+      return next(
+        new AppError(
+          `Validation failed: ${error.errors.map((e: any) => e.message).join(", ")}`,
+          400
+        )
+      );
+    }
+
+    // Handle Prisma unique constraint error (duplicate license plate)
+    if (error.code === "P2002") {
+      return next(
+        new AppError(
+          "A vehicle with this license plate number already exists",
+          400
+        )
+      );
+    }
+
+    return next(new AppError("Failed to create/update vehicle information", 500));
   }
 };
 
