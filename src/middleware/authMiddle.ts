@@ -5,7 +5,7 @@ import AppError from '../utils/AppError';
 
 const prisma = new PrismaClient();
 
-// Extend Express Request type to include driver
+// Extend Express Request type to include driver and admin user
 declare global {
   namespace Express {
     interface Request {
@@ -15,6 +15,12 @@ declare global {
         name: string;
         phoneNumber: string | null;
         phoneNumberVerified: boolean;
+      };
+      user?: {
+        id: string;
+        email: string;
+        name: string | null;
+        isAdmin: boolean;
       };
     }
   }
@@ -69,6 +75,67 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       name: driver.name,
       phoneNumber: driver.phoneNumber,
       phoneNumberVerified: driver.phoneNumberVerified
+    };
+
+    next();
+  } catch (error) {
+    if (error instanceof jwt.JsonWebTokenError) {
+      return next(new AppError('Invalid token. Please login again.', 401));
+    }
+    if (error instanceof jwt.TokenExpiredError) {
+      return next(new AppError('Token expired. Please login again.', 401));
+    }
+    return next(new AppError('Authentication failed. Please try again.', 500));
+  }
+};
+
+/**
+ * Admin authentication middleware
+ * Checks if the authenticated user is an admin
+ */
+export const authenticateAdmin = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Check for token in headers
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return next(new AppError('Authentication required. Please login.', 401));
+    }
+
+    const token = authHeader.split(' ')[1];
+    
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET is not defined');
+    }
+
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET) as { id: string };
+    
+    // Get user (not driver) to check admin status
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        isAdmin: true,
+      }
+    });
+
+    if (!user) {
+      return res.status(401).json({ message: 'Authentication failed. Please login.' });
+    }
+
+    if (!user.isAdmin) {
+      return next(new AppError('Unauthorized: Admin access required', 403));
+    }
+
+    // Attach user to request object
+    req.user = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      isAdmin: user.isAdmin
     };
 
     next();

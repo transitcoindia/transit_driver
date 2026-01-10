@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verificationTokenSchema = exports.multipleDocumentDataSchema = exports.driverDocumentSchema = exports.driverVehicleInfoSchema = exports.driverSignupSchema = void 0;
+exports.subscriptionActivateSchema = exports.verificationTokenSchema = exports.multipleDocumentDataSchema = exports.driverDocumentSchema = exports.driverVehicleInfoSchema = exports.driverSignupSchema = void 0;
 const libphonenumber_js_1 = require("libphonenumber-js");
 const zod_1 = require("zod");
 // Driver signup validation schema
@@ -101,5 +101,12 @@ exports.multipleDocumentDataSchema = zod_1.z.array(zod_1.z.object({
 // Driver verification token validation
 exports.verificationTokenSchema = zod_1.z.object({
     token: zod_1.z.string().min(1, "Verification token is required"),
+});
+// Subscription activation validation schema
+exports.subscriptionActivateSchema = zod_1.z.object({
+    amount: zod_1.z.number().positive("Amount must be positive"),
+    paymentMode: zod_1.z.string().min(1, "Payment mode is required"),
+    transactionId: zod_1.z.string().optional(),
+    durationDays: zod_1.z.number().int().min(1).max(365).optional().default(30), // Default 30 days
 });
 //# sourceMappingURL=driverValidation.js.map

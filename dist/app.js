@@ -28,14 +28,21 @@ const healthRoutes_1 = __importDefault(require("./routes/healthRoutes"));
 app.use('/', healthRoutes_1.default);
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ error: 'Something went wrong!' });
+    console.error('Error stack:', err.stack);
+    console.error('Error message:', err.message);
+    console.error('Request path:', req.path);
+    console.error('Request method:', req.method);
+    res.status(500).json({
+        error: 'Something went wrong!',
+        message: err.message,
+        path: req.path
+    });
 });
 app.get('/', (req, res) => {
     res.send('Hello World');
 });
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
 });

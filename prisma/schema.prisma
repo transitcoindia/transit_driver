@@ -241,6 +241,7 @@ model Driver {
   totalRatings      Int?    @default(0)
   accountActive     Boolean @default(false)
   rejectionReason   String? // Reason if driver was rejected
+  suspensionReason  String? // Reason if driver was suspended
 
   // Driver's Government IDs
   aadharNumber String?
@@ -507,7 +508,8 @@ model Ride {
   waitingTime        Int? // in minutes
   cancellationFee    Float?
   cancellationReason String?
-  cancelledBy        String? // "user", "driver", "system"
+  cancelledBy        String? // "user", "driver", "system", "admin"
+  cancelledAt        DateTime? // When the ride was cancelled
   paymentStatus      String? // "pending", "paid", "failed", etc.
   paymentMethod      String? // "cash", "wallet", "card", etc.
   transactionId      String? // Payment gateway reference
@@ -534,6 +536,9 @@ model Ride {
   route                 Json? // Polyline or array of coordinates
   waypoints             Json? // Intermediate stops
   driverLocationUpdates Json? // Array of {lat, lng, timestamp}
+
+  // Ride OTP for security (generated when driver accepts, verified before ride starts)
+  rideOtp          String?  // 4-digit OTP for ride verification (no expiration)
 
   // Timestamps
   createdAt DateTime @default(now())

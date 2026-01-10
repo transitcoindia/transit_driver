@@ -1,11 +1,29 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendShankhContactEmailsWithTextFallback = exports.sendShankhContactEmails = exports.sendGoaMilesRideEmail = exports.sendDriverDocumentsNotificationEmail = exports.sendDriverRejectionEmail = exports.sendDriverApprovalEmail = exports.sendDriverVerificationEmail = exports.sendContact_adver_Email = exports.sendContactEmail = exports.sendResetEmail = exports.sendVerificationEmail = void 0;
+exports.sendShankhContactEmailsWithTextFallback = exports.sendShankhContactEmails = exports.sendGoaMilesRideEmail = exports.sendDriverDocumentsNotificationEmail = exports.sendDriverSuspensionEmail = exports.sendDriverRejectionEmail = exports.sendDriverApprovalEmail = exports.sendDriverVerificationEmail = exports.sendContact_adver_Email = exports.sendContactEmail = exports.sendResetEmail = exports.sendVerificationEmail = void 0;
 const resend_1 = require("resend");
-const resend = new resend_1.Resend(process.env.RESEND_API_KEY);
+// Conditionally initialize Resend only if API key is present
+let resend = null;
+if (process.env.RESEND_API_KEY) {
+    resend = new resend_1.Resend(process.env.RESEND_API_KEY);
+}
+else {
+    console.warn('⚠️  RESEND_API_KEY is not set. Email functionality will be disabled.');
+}
+// Helper function to check if Resend is available
+const ensureResend = () => {
+    if (!resend) {
+        throw new Error('Resend is not configured. Please set RESEND_API_KEY in your environment variables.');
+    }
+    return resend;
+};
 const sendVerificationEmail = async (email, token) => {
     const url = `${process.env.BACKEND_URL}/api/auth/verify-email?token=${token}`;
     try {
+        if (!resend) {
+            console.warn('⚠️  Email not sent: RESEND_API_KEY is not configured');
+            return;
+        }
         await resend.emails.send({
             from: 'Transit <noreply@transitco.in>',
             to: email,
@@ -34,6 +52,10 @@ exports.sendVerificationEmail = sendVerificationEmail;
 const sendResetEmail = async (email, token) => {
     const url = `${process.env.FRONTEND_APP_URL}/resetPassword?token=${token}`;
     try {
+        if (!resend) {
+            console.warn('⚠️  Email not sent: RESEND_API_KEY is not configured');
+            return;
+        }
         await resend.emails.send({
             from: 'Transit <noreply@transitco.in>',
             to: email,
@@ -61,6 +83,10 @@ const sendResetEmail = async (email, token) => {
 exports.sendResetEmail = sendResetEmail;
 const sendContactEmail = async (formData) => {
     try {
+        if (!resend) {
+            console.warn('⚠️  Email not sent: RESEND_API_KEY is not configured');
+            return { success: false };
+        }
         // Send confirmation email to the user
         await resend.emails.send({
             from: 'Transit <noreply@transitco.in>',
@@ -105,6 +131,10 @@ const sendContactEmail = async (formData) => {
 exports.sendContactEmail = sendContactEmail;
 const sendContact_adver_Email = async (formData) => {
     try {
+        if (!resend) {
+            console.warn('⚠️  Email not sent: RESEND_API_KEY is not configured');
+            return { success: false };
+        }
         const fullName = `${formData.firstName} ${formData.lastName}`;
         // Send confirmation email to the user
         await resend.emails.send({
@@ -162,6 +192,10 @@ const sendContact_adver_Email = async (formData) => {
 exports.sendContact_adver_Email = sendContact_adver_Email;
 const sendDriverVerificationEmail = async (email, token) => {
     try {
+        if (!resend) {
+            console.warn('⚠️  Email not sent: RESEND_API_KEY is not configured');
+            return false;
+        }
         const verificationUrl = `${process.env.BACKEND_URL}/api/driver/verify-email?token=${token}`;
         await resend.emails.send({
             from: 'Transit Team <driver@transitco.in>',
@@ -192,6 +226,10 @@ const sendDriverVerificationEmail = async (email, token) => {
 exports.sendDriverVerificationEmail = sendDriverVerificationEmail;
 const sendDriverApprovalEmail = async (email, onboardingToken) => {
     try {
+        if (!resend) {
+            console.warn('⚠️  Email not sent: RESEND_API_KEY is not configured');
+            return false;
+        }
         const onboardingUrl = `${process.env.FRONTEND_APP_URL}/driver/onboarding?token=${onboardingToken}`;
         await resend.emails.send({
             from: 'Transit Team <driver@transitco.in>',
@@ -223,6 +261,10 @@ const sendDriverApprovalEmail = async (email, onboardingToken) => {
 exports.sendDriverApprovalEmail = sendDriverApprovalEmail;
 const sendDriverRejectionEmail = async (email, reason) => {
     try {
+        if (!resend) {
+            console.warn('⚠️  Email not sent: RESEND_API_KEY is not configured');
+            return false;
+        }
         await resend.emails.send({
             from: 'Transit Team <driver@transitco.in>',
             to: email,
@@ -249,14 +291,52 @@ const sendDriverRejectionEmail = async (email, reason) => {
     }
 };
 exports.sendDriverRejectionEmail = sendDriverRejectionEmail;
+const sendDriverSuspensionEmail = async (email, reason) => {
+    try {
+        if (!resend) {
+            console.warn('⚠️  Email not sent: RESEND_API_KEY is not configured');
+            return false;
+        }
+        await resend.emails.send({
+            from: 'Transit Team <driver@transitco.in>',
+            to: email,
+            subject: 'Important: Your Transit Driver Account Has Been Suspended',
+            html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>Account Suspension Notice</h2>
+          <p>Dear Driver,</p>
+          <p>We are writing to inform you that your Transit driver account has been suspended.</p>
+          <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <p><strong>Suspension Reason:</strong> ${reason}</p>
+          </div>
+          <p>During this suspension period, you will not be able to accept new rides or use the driver application.</p>
+          <p>If you believe this suspension was made in error, or if you would like to discuss this matter further, please contact our support team immediately.</p>
+          <p>We are here to help resolve any issues and work towards reinstating your account if appropriate.</p>
+          <p>Best regards,<br>The Transit Team</p>
+        </div>
+      `,
+        });
+        return true;
+    }
+    catch (error) {
+        console.error('Error sending driver suspension email:', error);
+        return false;
+    }
+};
+exports.sendDriverSuspensionEmail = sendDriverSuspensionEmail;
 const sendDriverDocumentsNotificationEmail = async (driver, userEmail, documents) => {
     try {
+        if (!resend) {
+            console.warn('⚠️  Email not sent: RESEND_API_KEY is not configured');
+            return false;
+        }
         // Generate secure tokens for approve/reject actions
         const approveToken = generateSecureToken({ action: 'approve', driverId: driver.id });
         const rejectToken = generateSecureToken({ action: 'reject', driverId: driver.id });
-        // Create approval and rejection URLs
-        const approveUrl = `${process.env.BACKEND_URL}/api/driver/admin/approve?token=${approveToken}`;
-        const rejectUrl = `${process.env.BACKEND_URL}/api/driver/admin/reject?token=${rejectToken}`;
+        // Create approval and rejection URLs (pointing to driver service)
+        const driverServiceUrl = process.env.DRIVER_SERVICE_URL || process.env.BACKEND_URL || 'https://api.transitco.in';
+        const approveUrl = `${driverServiceUrl}/api/driver/admin/approve?token=${approveToken}`;
+        const rejectUrl = `${driverServiceUrl}/api/driver/admin/reject?token=${rejectToken}`;
         // Create document list HTML
         const documentsHtml = documents.map(doc => `
       <div style="margin-bottom: 15px;">
@@ -311,6 +391,10 @@ function generateSecureToken(payload) {
 }
 const sendGoaMilesRideEmail = async (rideData) => {
     try {
+        if (!resend) {
+            console.warn('⚠️  Email not sent: RESEND_API_KEY is not configured');
+            return { success: false };
+        }
         const { fromLocationName, fromLocationLatitude, fromLocationLongitude, toLocationName, toLocationLatitude, toLocationLongitude, selectedDate, selectedTime, userName, userEmail, userPhone, userGender, userDob, userId } = rideData;
         const formattedTime = `${selectedTime.hour.toString().padStart(2, '0')}:${selectedTime.minute.toString().padStart(2, '0')}`;
         const formattedDate = new Date(selectedDate).toLocaleDateString('en-US', {
@@ -391,6 +475,10 @@ exports.sendGoaMilesRideEmail = sendGoaMilesRideEmail;
 const sendShankhContactEmails = async (formData) => {
     const { name, email, message, mobile, domain } = formData;
     try {
+        if (!resend) {
+            console.warn('⚠️  Email not sent: RESEND_API_KEY is not configured');
+            return { success: false };
+        }
         // Email to company
         const companyEmailResponse = await resend.emails.send({
             from: 'Shankh Technologies <noreply@shankhtech.com>',
@@ -512,6 +600,10 @@ exports.sendShankhContactEmails = sendShankhContactEmails;
 const sendShankhContactEmailsWithTextFallback = async (formData) => {
     const { name, email, message, mobile, domain } = formData;
     try {
+        if (!resend) {
+            console.warn('⚠️  Email not sent: RESEND_API_KEY is not configured');
+            return { success: false };
+        }
         // Email to company with text fallback
         const companyEmailResponse = await resend.emails.send({
             from: 'Transit <noreply@transitco.in>',

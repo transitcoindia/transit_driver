@@ -8,29 +8,29 @@ export declare const driverSignupSchema: z.ZodEffects<z.ZodObject<{
     phoneNumber: z.ZodEffects<z.ZodString, string, string>;
 }, "strip", z.ZodTypeAny, {
     email: string;
-    phoneNumber: string;
     password: string;
+    phoneNumber: string;
     firstName: string;
     lastName: string;
     confirmPassword: string;
 }, {
     email: string;
-    phoneNumber: string;
     password: string;
+    phoneNumber: string;
     firstName: string;
     lastName: string;
     confirmPassword: string;
 }>, {
     email: string;
-    phoneNumber: string;
     password: string;
+    phoneNumber: string;
     firstName: string;
     lastName: string;
     confirmPassword: string;
 }, {
     email: string;
-    phoneNumber: string;
     password: string;
+    phoneNumber: string;
     firstName: string;
     lastName: string;
     confirmPassword: string;
@@ -52,12 +52,12 @@ export declare const driverVehicleInfoSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     number: string;
     model: string;
+    drivingExperience: number;
+    brand: string;
     year: number;
     fuelType: string;
     seatingCapacity: number;
     insuranceStatus: boolean;
-    brand: string;
-    drivingExperience: number;
     hasCNG?: boolean | undefined;
     hasElectric?: boolean | undefined;
     roofTop?: boolean | undefined;
@@ -66,11 +66,11 @@ export declare const driverVehicleInfoSchema: z.ZodObject<{
 }, {
     number: string;
     model: string;
+    drivingExperience: number;
+    brand: string;
     year: number;
     fuelType: string;
     seatingCapacity: number;
-    brand: string;
-    drivingExperience: number;
     hasCNG?: boolean | undefined;
     hasElectric?: boolean | undefined;
     roofTop?: boolean | undefined;
@@ -88,38 +88,38 @@ export declare const driverDocumentSchema: z.ZodEffects<z.ZodObject<{
     insuranceNumber: z.ZodString;
     expiryDate: z.ZodEffects<z.ZodString, string, string>;
 }, "strip", z.ZodTypeAny, {
+    aadharNumber: string;
+    panNumber: string;
     documentType: "DRIVING_LICENSE" | "VEHICLE_REGISTRATION" | "INSURANCE";
     documentNumber: string;
     expiryDate: string;
-    aadharNumber: string;
-    panNumber: string;
     driverLicenseNumber: string;
     rcNumber: string;
     insuranceNumber: string;
 }, {
+    aadharNumber: string;
+    panNumber: string;
     documentType: "DRIVING_LICENSE" | "VEHICLE_REGISTRATION" | "INSURANCE";
     documentNumber: string;
     expiryDate: string;
-    aadharNumber: string;
-    panNumber: string;
     driverLicenseNumber: string;
     rcNumber: string;
     insuranceNumber: string;
 }>, {
+    aadharNumber: string;
+    panNumber: string;
     documentType: "DRIVING_LICENSE" | "VEHICLE_REGISTRATION" | "INSURANCE";
     documentNumber: string;
     expiryDate: string;
-    aadharNumber: string;
-    panNumber: string;
     driverLicenseNumber: string;
     rcNumber: string;
     insuranceNumber: string;
 }, {
+    aadharNumber: string;
+    panNumber: string;
     documentType: "DRIVING_LICENSE" | "VEHICLE_REGISTRATION" | "INSURANCE";
     documentNumber: string;
     expiryDate: string;
-    aadharNumber: string;
-    panNumber: string;
     driverLicenseNumber: string;
     rcNumber: string;
     insuranceNumber: string;
@@ -161,4 +161,20 @@ export declare const verificationTokenSchema: z.ZodObject<{
     token: string;
 }, {
     token: string;
+}>;
+export declare const subscriptionActivateSchema: z.ZodObject<{
+    amount: z.ZodNumber;
+    paymentMode: z.ZodString;
+    transactionId: z.ZodOptional<z.ZodString>;
+    durationDays: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+}, "strip", z.ZodTypeAny, {
+    paymentMode: string;
+    amount: number;
+    durationDays: number;
+    transactionId?: string | undefined;
+}, {
+    paymentMode: string;
+    amount: number;
+    transactionId?: string | undefined;
+    durationDays?: number | undefined;
 }>;

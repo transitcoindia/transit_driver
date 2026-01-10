@@ -1,4 +1,7 @@
 import express,{RequestHandler} from 'express';
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
 import { 
     register, 
     verifyDriverEmail, 
@@ -15,6 +18,12 @@ import {
     getDriverRideHistory,
     getDriverRideDetails,
 } from '../controllers/ride_controllers/rideHistory';
+import {
+    acceptRide,
+    startRide,
+    completeRide,
+    cancelRide,
+} from '../controllers/ride_controllers/rideManagement';
 import {
     getDriverEarnings,
     getDriverEarningsBreakdown,
@@ -36,8 +45,56 @@ import {
     getCurrentSubscription,
 } from '../controllers/ride_controllers/subscription';
 import { updateDriverProfile } from '../controllers/auth_controllers/profile';
-import { getDocumentStatus } from '../controllers/auth_controllers/documents';
-import { authenticate } from '../middleware/authMiddle';
+import { getDocumentStatus, getVehicleImages, uploadDocuments } from '../controllers/auth_controllers/documents';
+import { authenticate, authenticateAdmin } from '../middleware/authMiddle';
+import {
+    getAllDrivers,
+    approveDriver,
+    rejectDriver,
+    suspendDriver,
+    updateDriverApproval,
+} from '../controllers/admin/driverAdmin';
+
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(process.cwd(), 'uploads');
+const tempUploadsDir = path.join(uploadsDir, 'temp');
+
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+if (!fs.existsSync(tempUploadsDir)) {
+    fs.mkdirSync(tempUploadsDir, { recursive: true });
+}
+
+// Configure multer for temporary local storage before S3 upload
+const storage = multer.diskStorage({
+    destination: (req: express.Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
+        cb(null, tempUploadsDir);
+    },
+    filename: (req: express.Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        cb(null, file.fieldname + '-' + uniqueSuffix + '.' + file.originalname.split('.').pop());
+    }
+});
+
+// Configure upload middleware to handle multiple documents
+const documentUpload = multer({
+    storage,
+    limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB file size limit
+    },
+    fileFilter: (req: express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+        // Allow only images and PDFs
+        if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
+            cb(null, true);
+        } else {
+            cb(new Error('Only images and PDF documents are allowed'));
+        }
+    }
+}).fields([
+    { name: 'documents', maxCount: 5 }  // For multiple documents
+]);
 
 const router = express.Router();
 
@@ -58,6 +115,8 @@ router.post('/auth/google', (googleAuth as unknown) as RequestHandler);
 router.get('/profile', authenticate as RequestHandler, getUserDetails as RequestHandler);
 router.put('/profile', authenticate as RequestHandler, updateDriverProfile as RequestHandler);
 router.get('/documents/status', authenticate as RequestHandler, getDocumentStatus as RequestHandler);
+router.get('/documents/vehicleImages', authenticate as RequestHandler, getVehicleImages as RequestHandler);
+router.post('/documents/upload', authenticate as RequestHandler, documentUpload as any, uploadDocuments as RequestHandler);
 
 // Password reset routes
 router.post('/password-reset/request-otp', sendResetEmailController as RequestHandler);
@@ -67,6 +126,12 @@ router.post('/password-reset/verify-otp', resetPassword as RequestHandler);
 router.get('/rides/history', authenticate as RequestHandler, getDriverRideHistory as RequestHandler);
 router.get('/rides/:rideId', authenticate as RequestHandler, getDriverRideDetails as RequestHandler);
 router.post('/rides/:rideId/rate-rider', authenticate as RequestHandler, rateRider as RequestHandler);
+
+// Ride management routes
+router.post('/rides/:rideId/accept', authenticate as RequestHandler, acceptRide as RequestHandler);
+router.post('/rides/:rideId/start', authenticate as RequestHandler, startRide as RequestHandler);
+router.post('/rides/:rideId/complete', authenticate as RequestHandler, completeRide as RequestHandler);
+router.post('/rides/:rideId/cancel', authenticate as RequestHandler, cancelRide as RequestHandler);
 
 // Earnings routes
 router.get('/earnings', authenticate as RequestHandler, getDriverEarnings as RequestHandler);
@@ -84,5 +149,17 @@ router.post('/availability', authenticate as RequestHandler, toggleDriverAvailab
 // Subscription routes
 router.post('/subscription/activate', authenticate as RequestHandler, activateSubscription as RequestHandler);
 router.get('/subscription', authenticate as RequestHandler, getCurrentSubscription as RequestHandler);
+
+// Admin routes for driver management
+router.get('/admin/list', authenticateAdmin as RequestHandler, getAllDrivers as RequestHandler);
+router.put('/admin/approve/:driverId', authenticateAdmin as RequestHandler, approveDriver as RequestHandler);
+router.get('/admin/approve', approveDriver as RequestHandler); // Email token-based approval
+router.put('/admin/reject/:driverId', authenticateAdmin as RequestHandler, rejectDriver as RequestHandler);
+router.get('/admin/reject', rejectDriver as RequestHandler); // Email token-based rejection
+router.post('/admin/reject', rejectDriver as RequestHandler); // Email token-based rejection (POST)
+router.put('/admin/suspend/:driverId', authenticateAdmin as RequestHandler, suspendDriver as RequestHandler);
+router.get('/admin/suspend', suspendDriver as RequestHandler); // Email token-based suspension (optional)
+router.post('/admin/suspend', suspendDriver as RequestHandler); // Email token-based suspension (POST)
+router.patch('/admin/:driverId/approval', authenticateAdmin as RequestHandler, updateDriverApproval as RequestHandler);
 
 export default router;

@@ -14,6 +14,7 @@ const driverValidation_1 = require("../../validator/driverValidation");
 const otpService_1 = require("../../utils/otpService");
 const google_auth_library_1 = require("google-auth-library");
 const date_fns_1 = require("date-fns");
+const generateUserId_1 = require("../../utils/generateUserId");
 const client = new google_auth_library_1.OAuth2Client(process.env.GOOGLE_CLIENT_ID, undefined, // Client Secret is not used for 'postmessage' type
 'postmessage' // This is required for mobile apps
 );
@@ -24,36 +25,53 @@ const register = async (req, res, next) => {
     try {
         const validatedData = driverValidation_1.driverSignupSchema.parse(req.body);
         const { email, firstName, lastName, password, confirmPassword, phoneNumber } = validatedData;
-        // Check if the email already exists
-        const existingUser = await prismaClient_1.prisma.driver.findUnique({ where: { email } });
+        // Check if the email already exists in User table
+        const existingUser = await prismaClient_1.prisma.user.findUnique({ where: { email } });
         if (existingUser) {
             return next(new AppError_1.default('Email already exists', 400));
         }
         if (password !== confirmPassword) {
             return next(new AppError_1.default('Passwords do not match', 400));
         }
-        // Check if phone number already exists
+        // Check if phone number already exists in User table
         if (phoneNumber) {
-            const existingPhone = await prismaClient_1.prisma.driver.findFirst({ where: { phoneNumber } });
+            const existingPhone = await prismaClient_1.prisma.user.findFirst({ where: { phoneNumber } });
             if (existingPhone) {
                 return next(new AppError_1.default('Phone number already exists', 400));
             }
         }
         const hashedPassword = await bcrypt_1.default.hash(password, 10);
-        // Create user with isDriver flag
-        const driver = await prismaClient_1.prisma.driver.create({
+        // Generate custom user ID (D-001, D-002, etc.)
+        const customId = await (0, generateUserId_1.generateUserId)(prismaClient_1.prisma, false, true);
+        // First create User with isDriver flag
+        const user = await prismaClient_1.prisma.user.create({
             data: {
+                id: customId,
                 email,
                 name: `${firstName} ${lastName}`,
                 password: hashedPassword,
                 emailVerified: false,
                 phoneNumber,
                 phoneNumberVerified: false,
+                isDriver: true, // Set driver flag
                 createdAt: new Date(),
                 updatedAt: new Date(),
             },
         });
-        const verificationToken = (0, jwtService_1.generateToken)(driver.id);
+        // Then create Driver linked to User
+        const driver = await prismaClient_1.prisma.driver.create({
+            data: {
+                userId: user.id, // Link to User
+                name: `${firstName} ${lastName}`,
+                email,
+                phoneNumber,
+                emailVerified: false,
+                phoneNumberVerified: false,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            },
+        });
+        const verificationToken = (0, jwtService_1.generateToken)(user.id);
         // Send verification email
         await (0, emailService_1.sendDriverVerificationEmail)(email, verificationToken);
         // Generate and send OTP for phone verification
@@ -90,21 +108,43 @@ const register = async (req, res, next) => {
         });
     }
     catch (error) {
-        console.error('Registration error:', error);
+        // Comprehensive error logging (using both console.log and console.error for PM2)
+        const errorLog = `=== REGISTRATION ERROR START ===
+Error type: ${error?.constructor?.name}
+Error message: ${error instanceof Error ? error.message : String(error)}
+Error stack: ${error instanceof Error ? error.stack : 'No stack trace'}`;
+        console.log(errorLog);
+        console.error(errorLog);
+        try {
+            console.log('Error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+        }
+        catch (e) {
+            console.log('Error object (stringified):', String(error));
+        }
         if (error instanceof client_1.Prisma.PrismaClientKnownRequestError) {
-            console.error('Prisma error code:', error.code);
-            console.error('Prisma error message:', error.message);
+            const prismaLog = `Prisma error code: ${error.code}
+Prisma error message: ${error.message}
+Prisma error meta: ${JSON.stringify(error.meta)}`;
+            console.log(prismaLog);
+            console.error(prismaLog);
             if (error.code === 'P2002') {
+                console.log('=== REGISTRATION ERROR END ===');
                 return next(new AppError_1.default('Email or phone number already exists', 400));
             }
         }
         if (error instanceof AppError_1.default) {
+            console.log('=== REGISTRATION ERROR END ===');
             return next(error);
         }
-        // Log full error details for debugging
-        if (error instanceof Error) {
-            console.error('Error stack:', error.stack);
+        // Check for Zod validation errors
+        if (error && typeof error === 'object' && 'issues' in error) {
+            const zodLog = `Zod validation error: ${JSON.stringify(error.issues, null, 2)}`;
+            console.log(zodLog);
+            console.error(zodLog);
+            console.log('=== REGISTRATION ERROR END ===');
+            return next(new AppError_1.default('Validation failed: ' + JSON.stringify(error.issues), 400));
         }
+        console.log('=== REGISTRATION ERROR END ===');
         return next(new AppError_1.default('An error occurred during registration', 500));
     }
 };
@@ -140,6 +180,13 @@ const verifyRegistrationOTP = async (req, res, next) => {
         });
         if (!driver) {
             return next(new AppError_1.default('Driver not found', 404));
+        }
+        // Update User's phone verification status
+        if (driver.userId) {
+            await prismaClient_1.prisma.user.update({
+                where: { id: driver.userId },
+                data: { phoneNumberVerified: true }
+            });
         }
         // Update driver's phone verification status
         await prismaClient_1.prisma.driver.update({
@@ -184,11 +231,22 @@ const verifyDriverEmail = async (req, res) => {
     try {
         // Verify the token and assert the type
         const decoded = (0, jwtService_1.verifyToken)(token);
-        // Update user to set email as verified
-        await prismaClient_1.prisma.driver.update({
-            where: { id: decoded.id },
+        const userId = decoded.id;
+        // Update User to set email as verified
+        await prismaClient_1.prisma.user.update({
+            where: { id: userId },
             data: { emailVerified: true },
         });
+        // Also update Driver emailVerified to keep in sync
+        const driver = await prismaClient_1.prisma.driver.findFirst({
+            where: { userId: userId }
+        });
+        if (driver) {
+            await prismaClient_1.prisma.driver.update({
+                where: { id: driver.id },
+                data: { emailVerified: true },
+            });
+        }
         // Redirect to frontend driver onboarding page
         return res.redirect(`${process.env.FRONTEND_APP_URL}/verified-email?success=true`);
     }
@@ -202,32 +260,37 @@ exports.verifyDriverEmail = verifyDriverEmail;
 const loginWithEmail = async (req, res, next) => {
     try {
         const { email, password } = req.body;
-        // Find driver by email
-        const driver = await prismaClient_1.prisma.driver.findUnique({
+        // Find user by email (password is stored in User table)
+        const user = await prismaClient_1.prisma.user.findUnique({
             where: { email },
             include: {
-                driverDetails: true,
-                driverStatus: true
+                driver: {
+                    include: {
+                        driverDetails: true,
+                        driverStatus: true
+                    }
+                }
             }
         });
-        if (!driver) {
+        if (!user || !user.isDriver || !user.driver) {
             return res.status(401).json({
                 success: false,
                 message: 'Invalid email or password'
             });
         }
-        if (driver.emailVerified === false) {
+        const driver = user.driver;
+        if (user.emailVerified === false) {
             return res.status(401).json({
                 success: false,
                 message: 'Please verify your email'
             });
         }
-        // Verify password
-        const isValidPassword = await bcrypt_1.default.compare(password, driver.password);
+        // Verify password from User table
+        const isValidPassword = await bcrypt_1.default.compare(password, user.password);
         if (!isValidPassword) {
             return next(new AppError_1.default('Invalid email or password', 401));
         }
-        // Generate access token
+        // Generate access token using driver.id (keeping existing flow)
         const accessToken = (0, jwtService_1.generateAccessToken)(driver.id);
         return res.status(200).json({
             success: true,

@@ -313,6 +313,39 @@ export const sendDriverRejectionEmail = async (email: string, reason: string) =>
   }
 };
 
+export const sendDriverSuspensionEmail = async (email: string, reason: string) => {
+  try {
+    if (!resend) {
+      console.warn('⚠️  Email not sent: RESEND_API_KEY is not configured');
+      return false;
+    }
+    await resend.emails.send({
+      from: 'Transit Team <driver@transitco.in>',
+      to: email,
+      subject: 'Important: Your Transit Driver Account Has Been Suspended',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>Account Suspension Notice</h2>
+          <p>Dear Driver,</p>
+          <p>We are writing to inform you that your Transit driver account has been suspended.</p>
+          <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <p><strong>Suspension Reason:</strong> ${reason}</p>
+          </div>
+          <p>During this suspension period, you will not be able to accept new rides or use the driver application.</p>
+          <p>If you believe this suspension was made in error, or if you would like to discuss this matter further, please contact our support team immediately.</p>
+          <p>We are here to help resolve any issues and work towards reinstating your account if appropriate.</p>
+          <p>Best regards,<br>The Transit Team</p>
+        </div>
+      `,
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Error sending driver suspension email:', error);
+    return false;
+  }
+};
+
 export const sendDriverDocumentsNotificationEmail = async (
   driver: { id: string; name: string; userId: string },
   userEmail: string,
@@ -327,9 +360,10 @@ export const sendDriverDocumentsNotificationEmail = async (
     const approveToken = generateSecureToken({ action: 'approve', driverId: driver.id });
     const rejectToken = generateSecureToken({ action: 'reject', driverId: driver.id });
 
-    // Create approval and rejection URLs
-    const approveUrl = `${process.env.BACKEND_URL}/api/driver/admin/approve?token=${approveToken}`;
-    const rejectUrl = `${process.env.BACKEND_URL}/api/driver/admin/reject?token=${rejectToken}`;
+    // Create approval and rejection URLs (pointing to driver service)
+    const driverServiceUrl = process.env.DRIVER_SERVICE_URL || process.env.BACKEND_URL || 'https://api.transitco.in';
+    const approveUrl = `${driverServiceUrl}/api/driver/admin/approve?token=${approveToken}`;
+    const rejectUrl = `${driverServiceUrl}/api/driver/admin/reject?token=${rejectToken}`;
 
     // Create document list HTML
     const documentsHtml = documents.map(doc => `

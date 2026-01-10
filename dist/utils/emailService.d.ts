@@ -27,6 +27,7 @@ export declare const sendContact_adver_Email: (formData: Contact_adver_Data) => 
 export declare const sendDriverVerificationEmail: (email: string, token: string) => Promise<boolean>;
 export declare const sendDriverApprovalEmail: (email: string, onboardingToken: string) => Promise<boolean>;
 export declare const sendDriverRejectionEmail: (email: string, reason: string) => Promise<boolean>;
+export declare const sendDriverSuspensionEmail: (email: string, reason: string) => Promise<boolean>;
 export declare const sendDriverDocumentsNotificationEmail: (driver: {
     id: string;
     name: string;
@@ -59,6 +60,9 @@ interface GoaMilesRideData {
 }
 export declare const sendGoaMilesRideEmail: (rideData: GoaMilesRideData) => Promise<{
     success: boolean;
+    bookingRef?: undefined;
+} | {
+    success: boolean;
     bookingRef: string;
 }>;
 interface ShankhContactFormData {
@@ -70,10 +74,18 @@ interface ShankhContactFormData {
 }
 export declare const sendShankhContactEmails: (formData: ShankhContactFormData) => Promise<{
     success: boolean;
+    companyEmailId?: undefined;
+    userEmailId?: undefined;
+} | {
+    success: boolean;
     companyEmailId: import("resend").CreateEmailResponse;
     userEmailId: import("resend").CreateEmailResponse;
 }>;
 export declare const sendShankhContactEmailsWithTextFallback: (formData: ShankhContactFormData) => Promise<{
+    success: boolean;
+    companyEmailId?: undefined;
+    userEmailId?: undefined;
+} | {
     success: boolean;
     companyEmailId: import("resend").CreateEmailResponse;
     userEmailId: import("resend").CreateEmailResponse;
