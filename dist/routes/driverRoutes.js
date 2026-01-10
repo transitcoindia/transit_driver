@@ -56,6 +56,26 @@ const documentUpload = (0, multer_1.default)({
 }).fields([
     { name: 'documents', maxCount: 5 } // For multiple documents
 ]);
+// Configure multer for vehicle images (images only, no PDFs)
+const vehicleImageUpload = (0, multer_1.default)({
+    storage,
+    limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB file size limit
+    },
+    fileFilter: (req, file, cb) => {
+        // Allow only images
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        }
+        else {
+            cb(new Error('Only image files are allowed for vehicle images'));
+        }
+    }
+}).fields([
+    { name: 'cover', maxCount: 5 }, // Cover images
+    { name: 'interior', maxCount: 10 }, // Interior images
+    { name: 'exterior', maxCount: 10 } // Exterior images
+]);
 const router = express_1.default.Router();
 // Registration routes
 router.post('/register', authControllers_1.register);
@@ -72,6 +92,7 @@ router.get('/profile', authMiddle_1.authenticate, authControllers_1.getUserDetai
 router.put('/profile', authMiddle_1.authenticate, profile_1.updateDriverProfile);
 router.get('/documents/status', authMiddle_1.authenticate, documents_1.getDocumentStatus);
 router.get('/documents/vehicleImages', authMiddle_1.authenticate, documents_1.getVehicleImages);
+router.post('/documents/vehicleImages', authMiddle_1.authenticate, vehicleImageUpload, documents_1.uploadVehicleImages);
 router.post('/documents/vehicleInfo', authMiddle_1.authenticate, documents_1.createOrUpdateVehicleInfo);
 router.post('/documents/upload', authMiddle_1.authenticate, documentUpload, documents_1.uploadDocuments);
 // Password reset routes

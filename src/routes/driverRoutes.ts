@@ -45,7 +45,7 @@ import {
     getCurrentSubscription,
 } from '../controllers/ride_controllers/subscription';
 import { updateDriverProfile } from '../controllers/auth_controllers/profile';
-import { getDocumentStatus, getVehicleImages, uploadDocuments, createOrUpdateVehicleInfo } from '../controllers/auth_controllers/documents';
+import { getDocumentStatus, getVehicleImages, uploadDocuments, createOrUpdateVehicleInfo, uploadVehicleImages } from '../controllers/auth_controllers/documents';
 import { authenticate, authenticateAdmin } from '../middleware/authMiddle';
 import {
     getAllDrivers,
@@ -96,6 +96,26 @@ const documentUpload = multer({
     { name: 'documents', maxCount: 5 }  // For multiple documents
 ]);
 
+// Configure multer for vehicle images (images only, no PDFs)
+const vehicleImageUpload = multer({
+    storage,
+    limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB file size limit
+    },
+    fileFilter: (req: express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+        // Allow only images
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed for vehicle images'));
+        }
+    }
+}).fields([
+    { name: 'cover', maxCount: 5 },      // Cover images
+    { name: 'interior', maxCount: 10 },  // Interior images
+    { name: 'exterior', maxCount: 10 }   // Exterior images
+]);
+
 const router = express.Router();
 
 // Registration routes
@@ -116,6 +136,7 @@ router.get('/profile', authenticate as RequestHandler, getUserDetails as Request
 router.put('/profile', authenticate as RequestHandler, updateDriverProfile as RequestHandler);
 router.get('/documents/status', authenticate as RequestHandler, getDocumentStatus as RequestHandler);
 router.get('/documents/vehicleImages', authenticate as RequestHandler, getVehicleImages as RequestHandler);
+router.post('/documents/vehicleImages', authenticate as RequestHandler, vehicleImageUpload as any, uploadVehicleImages as RequestHandler);
 router.post('/documents/vehicleInfo', authenticate as RequestHandler, createOrUpdateVehicleInfo as RequestHandler);
 router.post('/documents/upload', authenticate as RequestHandler, documentUpload as any, uploadDocuments as RequestHandler);
 

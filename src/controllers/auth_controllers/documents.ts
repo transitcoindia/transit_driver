@@ -456,6 +456,213 @@ export const uploadDocuments = async (
 };
 
 /**
+ * Upload vehicle images (cover, interior, exterior)
+ * POST /api/driver/documents/vehicleImages
+ */
+export const uploadVehicleImages = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    if (!req.driver?.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Driver not authenticated",
+      });
+    }
+    const driverId = req.driver.id as string;
+
+    // Check if files were uploaded
+    if (!req.files) {
+      return next(new AppError("No images uploaded", 400));
+    }
+
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+
+    // Check if vehicle exists for this driver
+    const vehicle = await prisma.vehicle.findUnique({
+      where: { driverId: driverId },
+      select: {
+        id: true,
+        vehicleImages: true,
+      },
+    });
+
+    if (!vehicle) {
+      return next(new AppError("Vehicle not found. Please create vehicle information first.", 404));
+    }
+
+    // Get existing images or initialize empty object
+    let existingImages: any = {
+      cover: [],
+      interior: [],
+      exterior: [],
+    };
+
+    if (vehicle.vehicleImages) {
+      try {
+        existingImages = vehicle.vehicleImages as any;
+        existingImages.cover = existingImages.cover || [];
+        existingImages.interior = existingImages.interior || [];
+        existingImages.exterior = existingImages.exterior || [];
+      } catch (error) {
+        console.error("Error parsing existing vehicle images:", error);
+        // Keep default empty arrays
+      }
+    }
+
+    const uploadedUrls: { cover: string[]; interior: string[]; exterior: string[] } = {
+      cover: [],
+      interior: [],
+      exterior: [],
+    };
+
+    const uploadErrors: string[] = [];
+
+    // Process cover images
+    if (files["cover"] && files["cover"].length > 0) {
+      for (const file of files["cover"]) {
+        try {
+          if (!fs.existsSync(file.path)) {
+            uploadErrors.push(`Cover image not found: ${file.originalname}`);
+            continue;
+          }
+          const s3Url = await uploadToS3(file, "vehicle-images");
+          uploadedUrls.cover.push(s3Url);
+          // Clean up local file
+          if (fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+          }
+        } catch (error) {
+          uploadErrors.push(`Failed to upload cover image ${file.originalname}: ${error instanceof Error ? error.message : "Unknown error"}`);
+          if (file.path && fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+          }
+        }
+      }
+    }
+
+    // Process interior images
+    if (files["interior"] && files["interior"].length > 0) {
+      for (const file of files["interior"]) {
+        try {
+          if (!fs.existsSync(file.path)) {
+            uploadErrors.push(`Interior image not found: ${file.originalname}`);
+            continue;
+          }
+          const s3Url = await uploadToS3(file, "vehicle-images");
+          uploadedUrls.interior.push(s3Url);
+          // Clean up local file
+          if (fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+          }
+        } catch (error) {
+          uploadErrors.push(`Failed to upload interior image ${file.originalname}: ${error instanceof Error ? error.message : "Unknown error"}`);
+          if (file.path && fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+          }
+        }
+      }
+    }
+
+    // Process exterior images
+    if (files["exterior"] && files["exterior"].length > 0) {
+      for (const file of files["exterior"]) {
+        try {
+          if (!fs.existsSync(file.path)) {
+            uploadErrors.push(`Exterior image not found: ${file.originalname}`);
+            continue;
+          }
+          const s3Url = await uploadToS3(file, "vehicle-images");
+          uploadedUrls.exterior.push(s3Url);
+          // Clean up local file
+          if (fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+          }
+        } catch (error) {
+          uploadErrors.push(`Failed to upload exterior image ${file.originalname}: ${error instanceof Error ? error.message : "Unknown error"}`);
+          if (file.path && fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+          }
+        }
+      }
+    }
+
+    // Check if any images were successfully uploaded
+    const totalUploaded = uploadedUrls.cover.length + uploadedUrls.interior.length + uploadedUrls.exterior.length;
+    if (totalUploaded === 0) {
+      return next(new AppError("No images were successfully uploaded. " + (uploadErrors.length > 0 ? uploadErrors.join("; ") : ""), 400));
+    }
+
+    // Merge with existing images (append new images to existing ones)
+    const updatedImages = {
+      cover: [...existingImages.cover, ...uploadedUrls.cover],
+      interior: [...existingImages.interior, ...uploadedUrls.interior],
+      exterior: [...existingImages.exterior, ...uploadedUrls.exterior],
+    };
+
+    // Update vehicle with new images
+    const updatedVehicle = await prisma.vehicle.update({
+      where: { id: vehicle.id },
+      data: {
+        vehicleImages: updatedImages,
+      },
+      select: {
+        id: true,
+        licensePlate: true,
+        make: true,
+        model: true,
+        year: true,
+        vehicleImages: true,
+      },
+    });
+
+    // Parse images for response
+    let responseImages = {
+      cover: [] as string[],
+      interior: [] as string[],
+      exterior: [] as string[],
+    };
+
+    if (updatedVehicle.vehicleImages) {
+      try {
+        const parsed = updatedVehicle.vehicleImages as any;
+        responseImages = {
+          cover: parsed.cover || [],
+          interior: parsed.interior || [],
+          exterior: parsed.exterior || [],
+        };
+      } catch (error) {
+        console.error("Error parsing vehicle images:", error);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Successfully uploaded ${totalUploaded} image(s)`,
+      data: {
+        vehicleId: updatedVehicle.id,
+        licensePlate: updatedVehicle.licensePlate,
+        make: updatedVehicle.make,
+        model: updatedVehicle.model,
+        year: updatedVehicle.year,
+        images: responseImages,
+        uploaded: {
+          cover: uploadedUrls.cover.length,
+          interior: uploadedUrls.interior.length,
+          exterior: uploadedUrls.exterior.length,
+        },
+      },
+      ...(uploadErrors.length > 0 && { warnings: uploadErrors }),
+    });
+  } catch (error: any) {
+    console.error("Error uploading vehicle images:", error);
+    return next(new AppError("Failed to upload vehicle images", 500));
+  }
+};
+
+/**
  * Create or update vehicle information
  * POST /api/driver/documents/vehicleInfo
  */
