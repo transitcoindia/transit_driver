@@ -33,20 +33,26 @@ export const getAllDrivers = async (
       where.approvalStatus = approvalStatus;
     }
 
-    const [drivers, totalCount] = await Promise.all([
-      prisma.driver.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: "desc" },
-        include: {
-          documents: true,
-          vehicle: true,
-          user: true,
-        },
-      }),
-      prisma.driver.count({ where }),
-    ]);
+    // Use transaction to ensure consistent reads and better connection management
+    const [drivers, totalCount] = await prisma.$transaction(async (tx) => {
+      const [driversData, count] = await Promise.all([
+        tx.driver.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { createdAt: "desc" },
+          include: {
+            documents: true,
+            vehicle: true,
+            user: true,
+          },
+        }),
+        tx.driver.count({ where }),
+      ]);
+      return [driversData, count];
+    }, {
+      timeout: 30000, // 30 seconds timeout
+    });
 
     const totalPages = Math.ceil(totalCount / limit);
 
