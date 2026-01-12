@@ -40,29 +40,9 @@ export const getAllDrivers = async (
         take: limit,
         orderBy: { createdAt: "desc" },
         include: {
-          documents: {
-            select: {
-              id: true,
-              documentType: true,
-              isVerified: true,
-              expiryDate: true,
-            },
-          },
-          vehicle: {
-            select: {
-              id: true,
-              licensePlate: true,
-              vehicleType: true,
-            },
-          },
-          user: {
-            select: {
-              id: true,
-              email: true,
-              name: true,
-              phoneNumber: true,
-            },
-          },
+          documents: true,
+          vehicle: true,
+          user: true,
         },
       }),
       prisma.driver.count({ where }),
