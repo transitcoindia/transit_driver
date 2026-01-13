@@ -52,6 +52,7 @@ export const getAllDrivers = async (
       return [driversData, count];
     }, {
       timeout: 30000, // 30 seconds timeout
+      isolationLevel: 'ReadCommitted', // Use read committed to reduce locking
     });
 
     const totalPages = Math.ceil(totalCount / limit);
