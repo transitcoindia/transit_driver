@@ -34,26 +34,54 @@ export const getAllDrivers = async (
     }
 
     // Use transaction to ensure consistent reads and better connection management
-    const [drivers, totalCount] = await prisma.$transaction(async (tx) => {
-      const [driversData, count] = await Promise.all([
-        tx.driver.findMany({
-          where,
-          skip,
-          take: limit,
-          orderBy: { createdAt: "desc" },
-          include: {
-            documents: true,
-            vehicle: true,
-            user: true,
-          },
-        }),
-        tx.driver.count({ where }),
-      ]);
-      return [driversData, count];
-    }, {
-      timeout: 30000, // 30 seconds timeout
-      isolationLevel: 'ReadCommitted', // Use read committed to reduce locking
-    });
+    // Retry logic for database concurrency issues (same as driver/rider login fix)
+    let drivers: any[] = [];
+    let totalCount: number = 0;
+    let retries = 3;
+    let lastError: any;
+    let success = false;
+    
+    while (retries > 0) {
+      try {
+        const result = await prisma.$transaction(async (tx) => {
+          const [driversData, count] = await Promise.all([
+            tx.driver.findMany({
+              where,
+              skip,
+              take: limit,
+              orderBy: { createdAt: "desc" },
+              include: {
+                documents: true,
+                vehicle: true,
+                user: true,
+              },
+            }),
+            tx.driver.count({ where }),
+          ]);
+          return [driversData, count] as const;
+        }, {
+          timeout: 30000, // 30 seconds timeout
+          isolationLevel: 'ReadCommitted', // Use read committed to reduce locking
+        });
+        
+        // Success - assign and break
+        drivers = result[0];
+        totalCount = result[1];
+        success = true;
+        break;
+      } catch (error: any) {
+        lastError = error;
+        retries--;
+        if (retries > 0) {
+          // Wait a bit before retrying (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, 100 * (4 - retries)));
+        }
+      }
+    }
+    
+    if (!success) {
+      throw lastError || new Error('Failed to fetch drivers after retries');
+    }
 
     const totalPages = Math.ceil(totalCount / limit);
 
