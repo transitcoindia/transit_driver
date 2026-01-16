@@ -33,55 +33,73 @@ export const getAllDrivers = async (
       where.approvalStatus = approvalStatus;
     }
 
-    // Use transaction to ensure consistent reads and better connection management
-    // Retry logic for database concurrency issues (same as driver/rider login fix)
-    let drivers: any[] = [];
-    let totalCount: number = 0;
-    let retries = 3;
-    let lastError: any;
-    let success = false;
-    
-    while (retries > 0) {
-      try {
-        const result = await prisma.$transaction(async (tx) => {
-          const [driversData, count] = await Promise.all([
-            tx.driver.findMany({
-              where,
-              skip,
-              take: limit,
-              orderBy: { createdAt: "desc" },
-              include: {
-                documents: true,
-                vehicle: true,
-                user: true,
-              },
-            }),
-            tx.driver.count({ where }),
-          ]);
-          return [driversData, count] as const;
-        }, {
-          timeout: 30000, // 30 seconds timeout
-          isolationLevel: 'ReadCommitted', // Use read committed to reduce locking
-        });
-        
-        // Success - assign and break
-        drivers = result[0];
-        totalCount = result[1];
-        success = true;
-        break;
-      } catch (error: any) {
-        lastError = error;
-        retries--;
-        if (retries > 0) {
-          // Wait a bit before retrying (exponential backoff)
-          await new Promise(resolve => setTimeout(resolve, 100 * (4 - retries)));
-        }
-      }
-    }
-    
-    if (!success) {
-      throw lastError || new Error('Failed to fetch drivers after retries');
-    }
+    const [drivers, totalCount] = await Promise.all([
+      prisma.driver.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          name: true,
+          provider: true,
+          contactCode: true,
+          contactNumber: true,
+          createdAt: true,
+          updatedAt: true,
+          userId: true,
+          isVerified: true,
+          approvalStatus: true,
+          drivingExperience: true,
+          averageRating: true,
+          totalRatings: true,
+          accountActive: true,
+          rejectionReason: true,
+          suspensionReason: true,
+          aadharNumber: true,
+          panNumber: true,
+          currentLat: true,
+          currentLng: true,
+          // Include User data (email/phone are here now)
+          user: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              phoneNumber: true,
+              emailVerified: true,
+              phoneNumberVerified: true,
+              isDriver: true,
+              isAdmin: true,
+            }
+          },
+          // Include relations
+          documents: {
+            select: {
+              id: true,
+              documentType: true,
+              documentNumber: true,
+              documentUrl: true,
+              isVerified: true,
+            }
+          },
+          vehicle: {
+            select: {
+              id: true,
+              make: true,
+              model: true,
+              year: true,
+              color: true,
+              licensePlate: true,
+              vehicleType: true,
+              isActive: true,
+              isAvailable: true,
+            }
+          },
+        },
+      }),
+      prisma.driver.count({ where }),
+    ]);
 
     const totalPages = Math.ceil(totalCount / limit);
 
@@ -99,7 +117,12 @@ export const getAllDrivers = async (
     });
   } catch (error: any) {
     console.error("Error fetching drivers:", error);
-    return next(new AppError("Failed to fetch drivers", 500));
+    console.error("Error details:", JSON.stringify(error, null, 2));
+    if (error.code) {
+      console.error("Prisma error code:", error.code);
+      console.error("Prisma error message:", error.message);
+    }
+    return next(new AppError(`Failed to fetch drivers: ${error.message || 'Unknown error'}`, 500));
   }
 };
 
@@ -166,8 +189,8 @@ export const approveDriver = async (
     // Generate onboarding token (for driver app)
     const onboardingToken = generateToken(driver.id);
 
-    // Send approval email to driver
-    const driverEmail = driver.user?.email || driver.email;
+    // Send approval email to driver (email comes from User table)
+    const driverEmail = driver.user?.email;
     if (driverEmail) {
       await sendDriverApprovalEmail(driverEmail, onboardingToken);
     }

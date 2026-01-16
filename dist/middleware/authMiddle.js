@@ -21,33 +21,29 @@ const authenticate = async (req, res, next) => {
         }
         // Verify token
         const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
-        // Get driver with necessary fields
+        // Get driver with user relation (email/phone are in User table now)
         const driver = await prisma.driver.findUnique({
             where: { id: decoded.id },
-            select: {
-                id: true,
-                email: true,
-                name: true,
-                phoneNumber: true,
-                phoneNumberVerified: true,
+            include: {
+                user: true, // REQUIRED: Get email/phone from User table
                 driverDetails: true,
                 driverStatus: true
             }
         });
-        if (!driver) {
+        if (!driver || !driver.user) {
             return res.status(401).json({ message: 'Authentication failed. Please login.' });
         }
-        // Check if driver's phone is verified
-        if (!driver.phoneNumberVerified) {
+        // Check if driver's phone is verified (from User table)
+        if (!driver.user.phoneNumberVerified) {
             return res.status(401).json({ message: 'Phone number not verified. Please verify your phone number.' });
         }
-        // Attach driver to request object
+        // Attach driver to request object (using User data for email/phone)
         req.driver = {
             id: driver.id,
-            email: driver.email,
+            email: driver.user.email,
             name: driver.name,
-            phoneNumber: driver.phoneNumber,
-            phoneNumberVerified: driver.phoneNumberVerified
+            phoneNumber: driver.user.phoneNumber || null,
+            phoneNumberVerified: driver.user.phoneNumberVerified || false
         };
         next();
     }

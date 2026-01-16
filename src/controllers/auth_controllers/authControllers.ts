@@ -4,10 +4,9 @@ import bcrypt from 'bcrypt';
 import  {prisma}  from "../../prismaClient";
 import AppError from '../../utils/AppError';
 import { JwtPayload } from 'jsonwebtoken';
-import { sendDriverApprovalEmail, sendDriverDocumentsNotificationEmail, sendDriverRejectionEmail, sendDriverVerificationEmail } from '../../utils/emailService';
+import { sendDriverVerificationEmail } from '../../utils/emailService';
 import { generateToken, verifyToken, generateAccessToken } from '../../utils/jwtService';
-import { uploadToS3 } from '../../utils/s3Upload';
-import { driverDocumentSchema, driverSignupSchema, driverVehicleInfoSchema } from '../../validator/driverValidation';
+import { driverSignupSchema } from '../../validator/driverValidation';
 import { sendOtp } from '../../utils/otpService';
 import { OAuth2Client } from 'google-auth-library';
 import { addHours, isAfter } from 'date-fns';
@@ -65,41 +64,41 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
             },
         });
 
-        // Then create Driver linked to User
+        // Then create Driver linked to User (no duplicate email/password fields!)
         const driver = await prisma.driver.create({
             data: {
-                userId: user.id, // Link to User
+                userId: user.id, // REQUIRED: Link to User account
                 name: `${firstName} ${lastName}`,
-                email,
-                phoneNumber,
-                emailVerified: false,
-                phoneNumberVerified: false,
                 createdAt: new Date(),
                 updatedAt: new Date(),
+            },
+            include: {
+                user: true, // Include user data for response
             },
         });
 
         const verificationToken = generateToken(user.id);
 
-        // Send verification email
-        await sendDriverVerificationEmail(email, verificationToken);
+        // Send verification email (using user.email)
+        await sendDriverVerificationEmail(user.email, verificationToken);
 
-        // Generate and send OTP for phone verification
+        // Generate and send OTP for phone verification (using user.phoneNumber)
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
 
         // Save OTP to database
-        await prisma.otp.create({
-            data: {
-                phoneNumber,
-                otp,
-                expiresAt,
-                type: 'REGISTRATION'
-            }
-        });
+        if (user.phoneNumber) {
+            await prisma.otp.create({
+                data: {
+                    phoneNumber: user.phoneNumber,
+                    otp,
+                    expiresAt
+                }
+            });
+        }
 
         // Send OTP via Fast2SMS
-        // const otpResponse = await sendOtp(phoneNumber, otp);
+        // const otpResponse = await sendOtp(user.phoneNumber, otp);
         // if (!otpResponse || otpResponse.return === false) {
         //     return next(new AppError('Failed to send OTP. Please try again.', 500));
         // }
@@ -111,11 +110,11 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
             data: {
                 driver: {
                     id: driver.id,
-                    email: driver.email,
+                    email: driver.user?.email || email, // Get from User table
                     name: driver.name,
-                    phoneNumber: driver.phoneNumber,
-                    emailVerified: driver.emailVerified,
-                    phoneNumberVerified: driver.phoneNumberVerified
+                    phoneNumber: driver.user?.phoneNumber || phoneNumber || null, // Get from User table
+                    emailVerified: driver.user?.emailVerified || false, // Get from User table
+                    phoneNumberVerified: driver.user?.phoneNumberVerified || false // Get from User table
                 }
             }
         });
@@ -176,7 +175,6 @@ export const verifyRegistrationOTP = async (req: Request, res: Response, next: N
             where: {
                 phoneNumber,
                 otp,
-                type: 'REGISTRATION',
                 expiresAt: {
                     gt: new Date()
                 }
@@ -190,30 +188,28 @@ export const verifyRegistrationOTP = async (req: Request, res: Response, next: N
             return next(new AppError('Invalid or expired OTP', 401));
         }
 
-        // Find driver
-        const driver = await prisma.driver.findUnique({
+        // Find User by phoneNumber first (email/phone are in User table now)
+        const user = await prisma.user.findFirst({
             where: { phoneNumber },
             include: {
-                driverDetails: true,
-                driverStatus: true
+                driver: {
+                    include: {
+                        driverDetails: true,
+                        driverStatus: true
+                    }
+                }
             }
         });
 
-        if (!driver) {
+        if (!user || !user.driver) {
             return next(new AppError('Driver not found', 404));
         }
 
-        // Update User's phone verification status
-        if (driver.userId) {
-            await prisma.user.update({
-                where: { id: driver.userId },
-                data: { phoneNumberVerified: true }
-            });
-        }
+        const driver = user.driver;
 
-        // Update driver's phone verification status
-        await prisma.driver.update({
-            where: { id: driver.id },
+        // Update User's phone verification status (email/phone verification is in User table)
+        await prisma.user.update({
+            where: { id: user.id },
             data: { phoneNumberVerified: true }
         });
 
@@ -233,10 +229,10 @@ export const verifyRegistrationOTP = async (req: Request, res: Response, next: N
                 driver: {
                     id: driver.id,
                     name: driver.name,
-                    email: driver.email,
-                    phoneNumber: driver.phoneNumber,
-                    emailVerified: driver.emailVerified,
-                    phoneNumberVerified: driver.phoneNumberVerified,
+                    email: user.email, // From User table
+                    phoneNumber: user.phoneNumber, // From User table
+                    emailVerified: user.emailVerified, // From User table
+                    phoneNumberVerified: user.phoneNumberVerified, // From User table
                     driverDetails: driver.driverDetails,
                     driverStatus: driver.driverStatus
                 }
@@ -266,16 +262,7 @@ export const verifyDriverEmail = async (req: Request, res: Response) => {
             data: { emailVerified: true },
         });
 
-        // Also update Driver emailVerified to keep in sync
-        const driver = await prisma.driver.findFirst({
-            where: { userId: userId }
-        });
-        if (driver) {
-            await prisma.driver.update({
-                where: { id: driver.id },
-                data: { emailVerified: true },
-            });
-        }
+        // No need to update Driver - email verification is handled in User table only
 
         // Redirect to frontend driver onboarding page
         return res.redirect(`${process.env.FRONTEND_APP_URL}/verified-email?success=true`);
@@ -336,10 +323,10 @@ export const loginWithEmail = async (req: Request, res: Response, next: NextFunc
                 driver: {
                     id: driver.id,
                     name: driver.name,
-                    email: driver.email,
-                    phoneNumber: driver.phoneNumber,
-                    emailVerified: driver.emailVerified,
-                    phoneNumberVerified: driver.phoneNumberVerified,
+                    email: user.email, // From User table
+                    phoneNumber: user.phoneNumber, // From User table
+                    emailVerified: user.emailVerified, // From User table
+                    phoneNumberVerified: user.phoneNumberVerified, // From User table
                     driverDetails: driver.driverDetails,
                     driverStatus: driver.driverStatus
                 }
@@ -355,12 +342,13 @@ export const loginWithPhoneNumber = async (req: Request, res: Response, next: Ne
     try {
         const { phoneNumber } = req.body;
 
-        // Find driver by phone number
-        const driver = await prisma.driver.findUnique({
-            where: { phoneNumber }
+        // Find User by phone number (phoneNumber is in User table now)
+        const user = await prisma.user.findFirst({
+            where: { phoneNumber, isDriver: true },
+            include: { driver: true }
         });
 
-        if (!driver) {
+        if (!user || !user.driver) {
             return res.status(401).json({
                 success: false,
                 message: 'Invalid phone number'
@@ -376,8 +364,7 @@ export const loginWithPhoneNumber = async (req: Request, res: Response, next: Ne
             data: {
                 phoneNumber,
                 otp,
-                expiresAt,
-                type: 'LOGIN'
+                expiresAt
             }
         });
 
@@ -407,7 +394,6 @@ export const verifyPhoneOTP = async (req: Request, res: Response, next: NextFunc
             where: {
                 phoneNumber,
                 otp,
-                type: 'LOGIN',
                 expiresAt: {
                     gt: new Date()
                 }
@@ -421,18 +407,24 @@ export const verifyPhoneOTP = async (req: Request, res: Response, next: NextFunc
             return next(new AppError('Invalid or expired OTP', 401));
         }
 
-        // Find driver
-        const driver = await prisma.driver.findUnique({
-            where: { phoneNumber },
+        // Find User by phone number (phoneNumber is in User table now)
+        const user = await prisma.user.findFirst({
+            where: { phoneNumber, isDriver: true },
             include: {
-                driverDetails: true,
-                driverStatus: true
+                driver: {
+                    include: {
+                        driverDetails: true,
+                        driverStatus: true
+                    }
+                }
             }
         });
 
-        if (!driver) {
+        if (!user || !user.driver) {
             return next(new AppError('Driver not found', 404));
         }
+
+        const driver = user.driver;
 
         // Generate access token
         const accessToken = generateAccessToken(driver.id);
@@ -450,10 +442,10 @@ export const verifyPhoneOTP = async (req: Request, res: Response, next: NextFunc
                 driver: {
                     id: driver.id,
                     name: driver.name,
-                    email: driver.email,
-                    phoneNumber: driver.phoneNumber,
-                    emailVerified: driver.emailVerified,
-                    phoneNumberVerified: driver.phoneNumberVerified,
+                    email: user.email, // From User table
+                    phoneNumber: user.phoneNumber, // From User table
+                    emailVerified: user.emailVerified, // From User table
+                    phoneNumberVerified: user.phoneNumberVerified, // From User table
                     driverDetails: driver.driverDetails,
                     driverStatus: driver.driverStatus
                 }
@@ -476,13 +468,8 @@ export const getUserDetails = async (req: Request, res: Response, next: NextFunc
 
         const driver = await prisma.driver.findUnique({
             where: { id: req.driver.id },
-            select: {
-                id: true,
-                name: true,
-                email: true,
-                phoneNumber: true,
-                emailVerified: true,
-                phoneNumberVerified: true,
+            include: {
+                user: true, // REQUIRED: Get email/phone from User table
                 driverDetails: {
                     select: {
                         id: true,
@@ -504,7 +491,7 @@ export const getUserDetails = async (req: Request, res: Response, next: NextFunc
             }
         });
 
-        if (!driver) {
+        if (!driver || !driver.user) {
             return res.status(404).json({
                 success: false,
                 message: 'Driver not found'
@@ -521,10 +508,10 @@ export const getUserDetails = async (req: Request, res: Response, next: NextFunc
                 id: driver.id,
                 firstName,
                 lastName,
-                email: driver.email,
-                phoneNumber: driver.phoneNumber,
-                emailVerified: driver.emailVerified,
-                phoneNumberVerified: driver.phoneNumberVerified,
+                email: driver.user.email, // From User table
+                phoneNumber: driver.user.phoneNumber, // From User table
+                emailVerified: driver.user.emailVerified, // From User table
+                phoneNumberVerified: driver.user.phoneNumberVerified, // From User table
                 driverDetails: driver.driverDetails
             }
         });
@@ -560,24 +547,41 @@ export const googleAuth = async (req: Request, res: Response, next: NextFunction
 
     const { email, name, picture, sub: googleId } = payload;
 
-    // Check if driver exists
-    let driver = await prisma.driver.findUnique({
+    // Check if User exists (email is in User table now)
+    let existingUser = await prisma.user.findUnique({
       where: { email: email as string },
       include: {
-        driverDetails: true
+        driver: {
+          include: {
+            driverDetails: true
+          }
+        }
       }
     });
 
-    if (!driver) {
-      // Create new driver if doesn't exist
-      driver = await prisma.driver.create({
+    let driver: any;
+    
+    if (!existingUser) {
+      // Create User first (email/password are in User table)
+      const newUser = await prisma.user.create({
         data: {
           email: email as string,
           name: name as string,
           password: '', // Empty password for OAuth users
-          phoneNumber: '', // Empty phone number initially
           emailVerified: true, // Email is verified through Google
           phoneNumberVerified: false,
+          isDriver: true,
+        },
+      });
+
+      // Generate custom driver ID
+      const customId = await generateUserId(prisma, false, true);
+
+      // Then create Driver linked to User
+      driver = await prisma.driver.create({
+        data: {
+          userId: newUser.id, // REQUIRED: Link to User
+          name: name as string,
           driverDetails: {
             create: {
               licenseNumber: `TEMP-${googleId}`, // Temporary license number
@@ -588,18 +592,68 @@ export const googleAuth = async (req: Request, res: Response, next: NextFunction
           }
         },
         include: {
+          user: true,
           driverDetails: true
         }
       });
-    } else if (!driver.emailVerified) {
-      // Update email verification status if not verified
-      driver = await prisma.driver.update({
-        where: { id: driver.id },
-        data: { emailVerified: true },
-        include: {
-          driverDetails: true
+    } else {
+      // User exists, get or update driver
+      if (!existingUser.isDriver) {
+        // Update user to be a driver
+        await prisma.user.update({
+          where: { id: existingUser.id },
+          data: { isDriver: true }
+        });
+      }
+
+      if (!existingUser.driver) {
+        // Create driver for existing user
+        driver = await prisma.driver.create({
+          data: {
+            userId: existingUser.id, // REQUIRED: Link to User
+            name: name as string,
+            driverDetails: {
+              create: {
+                licenseNumber: `TEMP-${googleId}`,
+                profileImage: picture as string,
+                isAvailable: false,
+                isVerified: false
+              }
+            }
+          },
+          include: {
+            user: true,
+            driverDetails: true
+          }
+        });
+      } else {
+        // Reload driver with user relation
+        driver = await prisma.driver.findUnique({
+          where: { id: existingUser.driver.id },
+          include: {
+            user: true,
+            driverDetails: true
+          }
+        });
+        
+        if (!driver) {
+          return res.status(500).json({
+            success: false,
+            message: 'Driver not found'
+          });
         }
-      });
+        
+        // Update email verification in User table if needed
+        if (!existingUser.emailVerified) {
+          await prisma.user.update({
+            where: { id: existingUser.id },
+            data: { emailVerified: true }
+          });
+          if (driver.user) {
+            driver.user.emailVerified = true;
+          }
+        }
+      }
     }
 
     // Generate access token
@@ -612,13 +666,21 @@ export const googleAuth = async (req: Request, res: Response, next: NextFunction
         driver: {
           id: driver.id,
           name: driver.name,
-          email: driver.email,
-          emailVerified: driver.emailVerified,
-          phoneNumberVerified: driver.phoneNumberVerified,
+          email: driver.user?.email || email as string, // From User table
+          emailVerified: driver.user?.emailVerified || true, // From User table
+          phoneNumberVerified: driver.user?.phoneNumberVerified || false, // From User table
           profileImage: driver.driverDetails?.profileImage
         }
       }
     });
+    
+    // Type guard: ensure driver has user
+    if (!driver.user) {
+      return res.status(500).json({
+        success: false,
+        message: 'Driver user relation missing'
+      });
+    }
   } catch (error) {
     console.error('Google auth error:', error);
     return res.status(500).json({
@@ -639,8 +701,12 @@ export const sendResetEmailController = async (req: Request, res: Response, next
           message: "phoneNumber is required"
         });
       }
-      const user = await prisma.driver.findUnique({ where: { phoneNumber } });
-      if (!user) {
+      // Find User by phoneNumber (phoneNumber is in User table now)
+      const user = await prisma.user.findFirst({ 
+        where: { phoneNumber, isDriver: true },
+        include: { driver: true }
+      });
+      if (!user || !user.driver) {
         return next(new AppError('User not found', 404));
       }
   
@@ -654,8 +720,7 @@ export const sendResetEmailController = async (req: Request, res: Response, next
         data: { 
           phoneNumber, 
           otp, 
-          expiresAt,
-          type: 'PASSWORD_RESET'
+          expiresAt
         } 
       });
   
@@ -700,8 +765,13 @@ export const sendResetEmailController = async (req: Request, res: Response, next
         where: {
           phoneNumber,
           otp,
-          type: 'PASSWORD_RESET'
+          expiresAt: {
+            gt: new Date()
+          }
         },
+        orderBy: {
+          createdAt: 'desc'
+        }
       });
   
       if (!otpRecord) {
@@ -713,21 +783,20 @@ export const sendResetEmailController = async (req: Request, res: Response, next
         return res.status(400).json({ error: 'OTP has expired' });
       }
   
-      // Find the user
-      const user = await prisma.driver.findUnique({
-        where: { phoneNumber }
+      // Find User by phoneNumber (phoneNumber and password are in User table now)
+      const user = await prisma.user.findFirst({
+        where: { phoneNumber, isDriver: true }
       });
-  
+
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }
-  
-  
+
       // Hash the new password
       const hashedPassword = await bcrypt.hash(newPassword, 10);
-  
-      // Update user password and clear reset token
-      await prisma.driver.update({
+
+      // Update User password (password is in User table, not Driver)
+      await prisma.user.update({
         where: { id: user.id },
         data: {
           password: hashedPassword,

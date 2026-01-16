@@ -35,9 +35,13 @@ model User {
 
   sessions Session[]
   accounts Account[]
-  bookings Booking[]
-  driver   Driver?
-  rides    Ride[]
+  bookings Booking[] @relation("BookingUser")
+  driver   Driver? @relation("DriverUser")
+  rides    Ride[] @relation("RideRider")
+  payments Payment[] @relation("PaymentRider")
+  wallet   Wallet?
+  favoriteLocations FavoriteLocation[]
+  emergencyContacts EmergencyContact[]
 
   @@map("user")
 }
@@ -94,55 +98,33 @@ model Otp {
   otp         String
   expiresAt   DateTime
   createdAt   DateTime @default(now())
-  type        String?  @default("VERIFICATION") // Added from transit_driver
 
   @@map("otp")
 }
 
-// Cab Related schema - Unified Booking model (transit_backend + transit_driver)
+// Cab Related schema
 model Booking {
-  id String @id @default(cuid())
-
-  // transit_backend fields
-  bookingId  String? @unique // ONDC booking ID
-  orderRefId String? @unique // ONDC order reference
+  id         String   @id @default(cuid())
+  bookingId  String   @unique
+  orderRefId String?  @unique
+  status     String
   otp        String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  // transit_driver fields
-  rideRequestId String?      @unique // Link to RideRequest (for transit_driver)
-  rideRequest   RideRequest? @relation(fields: [rideRequestId], references: [id])
-
-  status    String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Associations from transit_backend
+  // Associations
   userId   String?
-  user     User?   @relation(fields: [userId], references: [id])
+  user     User?   @relation("BookingUser", fields: [userId], references: [id])
   cabId    String?
   cab      Cab?    @relation(fields: [cabId], references: [id])
   driverId String?
   driver   Driver? @relation(fields: [driverId], references: [id])
 
-  // Associations from transit_driver
-  riderId   String? // RiderInfo relation (for transit_driver)
-  rider     RiderInfo? @relation(fields: [riderId], references: [id])
-  vehicleId String?    @unique
-  vehicle   Vehicle?   @relation(fields: [vehicleId], references: [id])
-
-  // Trip details from transit_backend
+  // Trip details
   tripType          String?
   tripDescription   String?
   estimatedDuration Int?
   distance          Float?
-
-  // Trip details from transit_driver
-  startTime      DateTime?
-  endTime        DateTime?
-  actualDistance Float?
-  actualDuration Int?
-  finalFare      Float?
-  paymentStatus  String?   @default("PENDING") // PENDING, PAID, FAILED
 
   // Location details
   pickupLatitude  Float?
@@ -156,16 +138,17 @@ model Booking {
   refundAmount        Float?
   cancellationMessage String?
 
-  // Fare Breakup (transit_backend)
+  // Fare Breakup
   fare Fare?
+  
+  // Relations from transit_driver
+  rideRequest RideRequest?
+  tripLog     TripLog[]
+  
+  // RiderInfo relation (using bookingId as the link)
+  riderInfoId String?
+  riderInfo   RiderInfo? @relation("BookingRiderInfo", fields: [riderInfoId], references: [riderId])
 
-  // Trip logs (transit_driver)
-  tripLogs TripLog[]
-
-  @@index([driverId, status])
-  @@index([riderId, status])
-  @@index([status])
-  @@index([vehicleId])
   @@map("booking")
 }
 
@@ -190,7 +173,7 @@ model Cab {
   insuranceStatus        Boolean   @default(false)
   insuranceExpiryDate    DateTime?
   registrationExpiryDate DateTime?
-  cabImages              Json? // Will store { cover: string[], interior: string[], exterior: string[] }
+  cabImages             Json?      // Will store { cover: string[], interior: string[], exterior: string[] }
 
   // Update cab location
   lastLatitude  String?
@@ -219,26 +202,18 @@ model Driver {
   contactCode   String?
   contactNumber String? // Can be used by transit_backend
 
-  // Standalone driver account fields (for transit_driver)
-  email               String?   @unique // For transit_driver standalone accounts
-  password            String? // Hashed password for transit_driver
-  emailVerified       Boolean   @default(false)
-  phoneNumber         String?   @unique // For transit_driver (separate from contactNumber)
-  phoneNumberVerified Boolean   @default(false)
-  resetToken          String?   @unique
-  resetTokenExpiresAt DateTime?
-
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now())
 
   // Driver verification and onboarding fields
-  userId            String? @unique // Link to User account (for transit_backend)
-  user              User?   @relation(fields: [userId], references: [id])
+  // Email, password, phoneNumber come from User table - no duplication!
+  userId            String  @unique // REQUIRED: Driver MUST be linked to a User account
+  user              User    @relation("DriverUser", fields: [userId], references: [id], onDelete: Cascade)
   isVerified        Boolean @default(false) // Whether driver is verified
   approvalStatus    String  @default("PENDING") // PENDING, APPROVED, REJECTED, SUSPENDED
-  drivingExperience Int? // Years of driving experience
-  averageRating     Float?  @default(0)
-  totalRatings      Int?    @default(0)
+  drivingExperience Int?    @default(0) // Years of driving experience
+  averageRating     Float   @default(0)
+  totalRatings      Int     @default(0)
   accountActive     Boolean @default(false)
   rejectionReason   String? // Reason if driver was rejected
   suspensionReason  String? // Reason if driver was suspended
@@ -258,7 +233,7 @@ model Driver {
   SubscriptionPayments SubscriptionPayment[]
   cab                  Cab?
   rides                Ride[]
-  vehicle              Vehicle?
+  vehicle              Vehicle[]
 
   // Relations from transit_driver
   driverDetails  DriverDetails?
@@ -268,6 +243,8 @@ model Driver {
   rideRequests   DriverRideRequests[]
   assignedRides  RideRequest[]        @relation("AssignedDriver")
 
+  // Indexes for better query performance
+  @@index([userId])
   @@map("driver")
 }
 
@@ -285,26 +262,25 @@ model DriverDocument {
   uploadDate        DateTime  @default(now())
   verifiedDate      DateTime?
 
-  @@index([driverId]) // Added from transit_driver
   @@map("driver_document")
 }
 
 //subsciption model for driver
 model DriverSubscription {
-  id         String       @id @default(cuid())
-  driverId   String
-  driver     Driver       @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  startTime  DateTime
-  expire     DateTime
-  amountPaid Float
-  status     statusDriver // ACTIVE, EXPIRED, CANCELLED
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @default(now())
+  id           String   @id @default(cuid())
+  driverId     String
+  driver       Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  startTime    DateTime
+  expire       DateTime
+  amountPaid   Float
+  status       statusDriver  // ACTIVE, EXPIRED, CANCELLED
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now())
 
-  paymentId   String?
-  paymentMode String?
+  paymentId    String?
+  paymentMode  String? 
 
-  autoRenewed Boolean @default(false)
+  autoRenewed  Boolean      @default(false)
 
   //track remaining time if subscription is paused
   remainingMinutes Int?
@@ -313,23 +289,23 @@ model DriverSubscription {
   @@index([status, expire])
 }
 
-enum statusDriver {
+enum statusDriver  {
   ACTIVE
   EXPIRED
-  CANCELLED
+  CANCELLED 
 }
 
 // payment transaction model to track payments
 model SubscriptionPayment {
-  id            String   @id @default(cuid())
-  driverId      String
-  driver        Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  amount        Float
-  paymentMode   String
-  transactionId String?
-  status        String // SUCCESS, FAILED, PENDING
-  createdAt     DateTime @default(now())
-
+  id              String   @id @default(cuid())
+  driverId        String
+  driver          Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  amount          Float
+  paymentMode     String
+  transactionId   String?  
+  status          String   // SUCCESS, FAILED, PENDING
+  createdAt       DateTime @default(now())
+  
   @@index([driverId])
 }
 
@@ -364,196 +340,306 @@ model Fare {
 }
 
 model Vehicle {
-  id           String  @id @default(cuid())
-  make         String
-  model        String
-  year         Int
-  color        String? // Made optional (was required in transit_driver)
-  licensePlate String  @unique
-  vehicleType  String // e.g., "sedan", "suv", "hatchback"
-
-  // Vehicle information
-  hasCNG                 Boolean   @default(false)
-  hasElectric            Boolean   @default(false)
-  roofTop                Boolean   @default(false) // From transit_driver
-  fuelType               String?
-  seatingCapacity        Int?
-  insuranceStatus        Boolean   @default(false)
-  insuranceExpiry        DateTime? // From transit_backend
-  insuranceExpiryDate    DateTime? // From transit_driver (alias)
-  registrationExpiry     DateTime? // From transit_backend
-  registrationExpiryDate DateTime? // From transit_driver (alias)
-  vehicleImages          Json? // { cover: string[], interior: string[], exterior: string[] }
-
-  // Operational status
-  isActive        Boolean   @default(true)
-  isAvailable     Boolean   @default(true)
-  isInService     Boolean   @default(true) // From transit_driver
-  lastMaintenance DateTime? // From transit_driver
-  nextMaintenance DateTime? // From transit_driver
-
-  // Current status (from transit_driver)
-  currentLocation Json? // {latitude: number, longitude: number}
-  currentSpeed    Float?
-  currentBattery  Float? // For electric vehicles
-  currentFuel     Float? // For fuel vehicles
-
-  // Operational metrics (from transit_driver)
-  totalTrips    Int   @default(0)
-  totalDistance Float @default(0)
-  totalEarnings Float @default(0)
-  averageRating Float @default(0)
-
-  // Additional features (from transit_driver)
-  features       Json? // AC, music, wifi, etc.
-  amenities      Json? // Water, tissues, etc.
-  documents      Json? // Additional vehicle documents
-  serviceHistory Json? // Maintenance and service records
-
-  // Zone and area (from transit_driver)
-  currentZoneId String?
-  currentZone   ServiceZone? @relation(fields: [currentZoneId], references: [id])
-
-  // Relationships
-  driverId       String          @unique
-  driver         Driver          @relation(fields: [driverId], references: [id])
-  driverLocation DriverLocation? // From transit_driver
-  rides          Ride[]
-  bookings       Booking[] // From transit_driver
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([isActive, isAvailable])
-  @@index([currentZoneId])
-  @@index([isInService])
-  @@map("vehicle")
+  id                String   @id @default(cuid())
+  make              String
+  model             String
+  year              Int
+  color             String?
+  licensePlate      String   @unique
+  vehicleType       String   // e.g., "sedan", "suv", "hatchback"
+  hasCNG            Boolean  @default(false)
+  hasElectric       Boolean  @default(false)
+  fuelType          String?
+  seatingCapacity   Int?
+  insuranceStatus   Boolean  @default(false)
+  insuranceExpiry   DateTime?
+  registrationExpiry DateTime?
+  vehicleImages     Json?    // { cover: string[], interior: string[], exterior: string[] }
+  isActive          Boolean  @default(true)
+  isAvailable       Boolean  @default(true)
+  driverId          String   @unique
+  driver            Driver   @relation(fields: [driverId], references: [id])
+  driverLocation    DriverLocation? // Relation from DriverLocation
+  rides             Ride[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 model ServiceZone {
-  id          String @id @default(cuid())
-  name        String
-  city        String
-  country     String @default("India")
-  boundary    Json // Polygon or geojson (from transit_backend)
-  coordinates Json? // Store polygon coordinates as JSON (from transit_driver)
-
-  isActive            Boolean @default(true)
-  baseFare            Float
-  perKmRate           Float
-  perMinRate          Float
-  minFare             Float
-  maxFare             Float?
-  waitingChargePerMin Float   @default(0) // From transit_driver
-  cancellationFee     Float   @default(0) // From transit_driver
-
-  surgeMultiplier Float     @default(1.0)
-  surgeActive     Boolean   @default(false) // From transit_driver
-  surgeReason     String? // From transit_driver
-  surgeStartTime  DateTime? // From transit_driver
-  surgeEndTime    DateTime? // From transit_driver
-
-  maxDrivers     Int? // From transit_driver
-  currentDrivers Int  @default(0) // From transit_driver
-  minDrivers     Int  @default(0) // From transit_driver
-
-  demandLevel   Float @default(1.0) // From transit_driver
-  trafficFactor Float @default(1.0) // From transit_driver
-  weatherFactor Float @default(1.0) // From transit_driver
-
-  operatingHours Json? // Store operating hours for each day (from transit_driver)
-  holidays       Json? // Store holiday dates (from transit_driver)
-  bbox           Json? // From transit_driver
-
-  rides     Ride[]
-  vehicles  Vehicle[] // From transit_driver
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  @@index([city, isActive])
-  @@index([demandLevel, isActive])
+  id                String   @id @default(cuid())
+  name              String
+  city              String
+  country           String   @default("India")
+  boundary          Json     // Polygon or geojson
+  baseFare          Float
+  perKmRate         Float
+  perMinRate        Float
+  minFare           Float
+  maxFare           Float?
+  surgeMultiplier   Float    @default(1.0)
+  isActive          Boolean  @default(true)
+  rides             Ride[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 model Ride {
-  id       String  @id @default(cuid())
-  rideCode String? @unique // Human-readable code for reference (from transit_backend)
-  status   String // "pending", "accepted", "in_progress", "completed", "cancelled"
-
-  // Location fields - unified
-  pickupLatitude  Float // Required in transit_backend
-  pickupLongitude Float // Required in transit_backend
-  pickupLocation  String? // From transit_driver (string format)
-  pickupAddress   String?
-  dropLatitude    Float?
-  dropLongitude   Float?
-  dropoffLocation String? // From transit_driver (string format)
-  dropAddress     String?
-
-  startTime DateTime?
-  endTime   DateTime?
-
-  // Fare and distance - unified
+  id                String   @id @default(cuid())
+  rideCode          String   @unique // Human-readable code for reference (optional)
+  status            String   // "pending", "accepted", "in_progress", "completed", "cancelled"
+  pickupLatitude    Float
+  pickupLongitude   Float
+  pickupAddress     String?
+  dropLatitude      Float?
+  dropLongitude     Float?
+  dropAddress       String?
+  startTime         DateTime?
+  endTime           DateTime?
   estimatedFare     Float?
-  actualFare        Float? // From transit_backend
-  fare              Float? // From transit_driver (alias)
+  actualFare        Float?
   estimatedDistance Float?
-  actualDistance    Float? // From transit_backend
-  distance          Float? // From transit_driver (alias)
-  estimatedDuration Int? // in minutes
-  actualDuration    Int? // in minutes
-  duration          Int? // Duration in minutes (from transit_driver, alias)
-
-  baseFare           Float?
-  surgeMultiplier    Float   @default(1.0)
-  waitingTime        Int? // in minutes
-  cancellationFee    Float?
+  actualDistance    Float?
+  estimatedDuration Int?     // in minutes
+  actualDuration    Int?     // in minutes
+  baseFare          Float?
+  surgeMultiplier   Float    @default(1.0)
+  waitingTime       Int?     // in minutes
+  cancellationFee   Float?
   cancellationReason String?
-  cancelledBy        String? // "user", "driver", "system", "admin"
-  cancelledAt        DateTime? // When the ride was cancelled
-  paymentStatus      String? // "pending", "paid", "failed", etc.
-  paymentMethod      String? // "cash", "wallet", "card", etc.
-  transactionId      String? // Payment gateway reference
+  cancelledBy       String?  // "user", "driver", "system", "admin"
+  cancelledAt       DateTime? // When the ride was cancelled
+  paymentStatus     String?  // "pending", "paid", "failed", etc.
+  paymentMethod     String?  // "cash", "wallet", "card", etc.
+  transactionId     String?  // Payment gateway reference
 
-  // Relations - Support both User (transit_backend) and RiderInfo (transit_driver)
-  driverId String
-  driver   Driver @relation(fields: [driverId], references: [id])
+  // Rating and review
+  rating            Float?   // Rating from 1 to 5
+  comment           String?  // Optional review comment from rider
 
-  // Rider relation - User (transit_backend)
-  riderId String? // Optional to support both User and RiderInfo
-  rider   User?   @relation(fields: [riderId], references: [id])
-
-  // Rider relation - RiderInfo (transit_driver) 
-  riderInfoId String? // Optional to support both User and RiderInfo
-  riderInfo   RiderInfo? @relation(fields: [riderInfoId], references: [id])
-
-  vehicleId     String?
-  vehicle       Vehicle?     @relation(fields: [vehicleId], references: [id])
-  serviceZoneId String? // Used by both services (zoneId in transit_driver maps to this)
-  serviceZone   ServiceZone? @relation(fields: [serviceZoneId], references: [id])
-  payment       Payment? // From transit_driver
+  // Relations
+  driverId          String
+  driver            Driver   @relation(fields: [driverId], references: [id])
+  riderId           String
+  rider             User     @relation("RideRider", fields: [riderId], references: [id])
+  riderInfoId       String?
+  riderInfo         RiderInfo? @relation("RideRiderInfo", fields: [riderInfoId], references: [riderId])
+  vehicleId         String?
+  vehicle           Vehicle? @relation(fields: [vehicleId], references: [id])
+  serviceZoneId     String?
+  serviceZone       ServiceZone? @relation(fields: [serviceZoneId], references: [id])
 
   // Route and tracking
-  route                 Json? // Polyline or array of coordinates
-  waypoints             Json? // Intermediate stops
+  route             Json?    // Polyline or array of coordinates
+  waypoints         Json?    // Intermediate stops [{latitude, longitude, address, order}]
   driverLocationUpdates Json? // Array of {lat, lng, timestamp}
+
+  // Scheduled/Advance booking
+  isScheduled       Boolean  @default(false)
+  scheduledPickupTime DateTime? // For advance bookings
+  scheduledAt       DateTime? // When the ride was scheduled
 
   // Ride OTP for security (generated when driver accepts, verified before ride starts)
   rideOtp          String?  // 4-digit OTP for ride verification (no expiration)
 
   // Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([status, createdAt])
   @@index([driverId, status])
   @@index([riderId, status])
-  @@index([riderInfoId, status])
   @@index([serviceZoneId])
+  @@index([driverId, status, rating]) // For rating queries
+  payments Payment[]
 }
 
-// ========== Models from transit_driver ==========
+// Payment model for ride payments
+model Payment {
+  id            String    @id @default(cuid())
+  amount        Float
+  status        String    // "pending", "completed", "failed", "refunded"
+  paymentMethod String    // "credit_card", "debit_card", "cash", "wallet", "upi"
+  transactionId String?   @unique
+  razorpayOrderId String?
+  razorpayPaymentId String?
+  razorpaySignature String?
+  currency      String    @default("INR")
+  description   String?
+  metadata      Json?     // Additional payment details
+  
+  // Ride relation
+  ride          Ride      @relation(fields: [rideId], references: [id])
+  rideId        String    @unique
+  
+  // Rider relation
+  rider         User      @relation("PaymentRider", fields: [riderId], references: [id])
+  riderId       String
+  
+  // Driver relation
+  driver        Driver?   @relation(fields: [driverId], references: [id])
+  driverId      String?
+  
+  // RiderInfo relation (from transit_driver) - using a separate field to avoid FK conflict
+  riderInfoId   String?
+  riderInfo     RiderInfo? @relation("PaymentRiderInfo", fields: [riderInfoId], references: [riderId])
+  
+  // Refund details
+  refundReason  String?
+  refundedAt    DateTime?
+  refundAmount  Float?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-// Driver details model (transit_driver)
+  @@index([status, createdAt])
+  @@index([riderId, status])
+  @@index([driverId, status])
+  @@index([rideId])
+  @@index([transactionId])
+}
+
+// Wallet model for riders
+model Wallet {
+  id            String    @id @default(cuid())
+  balance       Float     @default(0)
+  currency      String    @default("INR")
+  
+  // Rider relation
+  rider         User      @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  riderId       String    @unique
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  transactions  WalletTransaction[]
+
+  @@map("wallet")
+}
+
+// Wallet transaction history
+model WalletTransaction {
+  id            String    @id @default(cuid())
+  type          String    // "credit", "debit"
+  amount        Float
+  balanceBefore Float
+  balanceAfter  Float
+  description   String?
+  referenceType String?   // "ride_payment", "refund", "topup", "refund_cancellation"
+  referenceId   String?   // ID of related entity (rideId, paymentId, etc.)
+  
+  wallet        Wallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  walletId      String
+  
+  createdAt     DateTime  @default(now())
+
+  @@index([walletId, createdAt])
+  @@index([referenceType, referenceId])
+  @@map("wallet_transaction")
+}
+
+// Favorite locations for riders
+model FavoriteLocation {
+  id            String    @id @default(cuid())
+  name          String    // "Home", "Work", "Custom name"
+  address       String
+  latitude      Float
+  longitude     Float
+  type          String?   // "home", "work", "custom"
+  
+  // Rider relation
+  rider         User      @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  riderId       String
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([riderId])
+  @@map("favorite_location")
+}
+
+// Emergency contacts for riders
+model EmergencyContact {
+  id            String    @id @default(cuid())
+  name          String
+  phoneNumber   String
+  relationship  String?   // "family", "friend", "other"
+  
+  // Rider relation
+  rider         User      @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  riderId       String
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([riderId])
+  @@map("emergency_contact")
+}
+
+// ONDC Reconciliation Models
+model OndcReconciliation {
+  id            String   @id @default(cuid())
+  transactionId String   @unique
+  bppId         String
+  bppUri        String
+  status        String   // PENDING, COMPLETED, FAILED
+  totalAmount   Decimal?
+  currency      String   @default("INR")
+  
+  // Legacy DB column retained for compatibility; ignored by Prisma Client
+  ordersLegacy  Json?    @map("orders") @ignore
+  
+  // Timestamps
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  orders        OndcReconciliationOrder[]
+  
+  @@index([status, createdAt])
+  @@map("ondcReconciliation")
+}
+
+model OndcReconciliationOrder {
+  id                String   @id @default(cuid())
+  reconciliationId  String
+  orderId           String
+  amount            Decimal
+  currency          String   @default("INR")
+  status            String   // PENDING, COMPLETED, FAILED
+  
+  // Timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  reconciliation    OndcReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  settlements       OndcReconciliationSettlement[]
+  
+  @@index([reconciliationId])
+  @@index([orderId])
+}
+
+model OndcReconciliationSettlement {
+  id                String   @id @default(cuid())
+  orderId           String
+  settlementId      String
+  paymentId         String
+  amount            Decimal
+  currency          String   @default("INR")
+  status            String   // PENDING, COMPLETED, FAILED
+  
+  // Timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  order             OndcReconciliationOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  @@index([orderId])
+  @@index([settlementId])
+}
+
+// Driver-specific models (from transit_driver)
 model DriverDetails {
   id            String    @id @default(cuid())
   driver        Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade)
@@ -673,8 +759,8 @@ model RideRequest {
   cancelledBy        String?
 
   // Final booking reference
-  bookingId String?
-  booking   Booking?
+  bookingId String? @unique
+  booking   Booking? @relation(fields: [bookingId], references: [id])
 
   // Broadcast tracking
   driverRequests DriverRideRequests[]
@@ -738,12 +824,12 @@ model RiderInfo {
   totalRides   Int     @default(0)
 
   // Track ride history
-  rides        Ride[]
+  rides        Ride[] @relation("RideRiderInfo")
   rideRequests RideRequest[]
-  bookings     Booking[]
+  bookings     Booking[] @relation("BookingRiderInfo")
 
   // Track payment history
-  payments Payment[]
+  payments Payment[] @relation("PaymentRiderInfo")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -751,101 +837,4 @@ model RiderInfo {
   @@index([riderId])
   @@index([phoneNumber])
   @@map("rider_info")
-}
-
-// Payment model (transit_driver)
-model Payment {
-  id            String  @id @default(cuid())
-  amount        Float
-  status        String // "pending", "completed", "failed", "refunded"
-  paymentMethod String // "credit_card", "debit_card", "cash", "wallet"
-  transactionId String? @unique
-  currency      String  @default("INR")
-  description   String?
-  metadata      Json? // Additional payment details
-
-  // Ride relation
-  ride   Ride   @relation(fields: [rideId], references: [id])
-  rideId String @unique
-
-  // Driver relation
-  driver   Driver @relation(fields: [driverId], references: [id])
-  driverId String
-
-  // Rider relation
-  rider   RiderInfo @relation(fields: [riderId], references: [id])
-  riderId String
-
-  refundReason String?
-  refundedAt   DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  @@index([status, createdAt])
-  @@index([driverId, status])
-  @@index([riderId, status])
-}
-
-// ONDC Reconciliation Models
-model OndcReconciliation {
-  id            String   @id @default(cuid())
-  transactionId String   @unique
-  bppId         String
-  bppUri        String
-  status        String // PENDING, COMPLETED, FAILED
-  totalAmount   Decimal?
-  currency      String   @default("INR")
-
-  // Legacy DB column retained for compatibility; ignored by Prisma Client
-  ordersLegacy Json? @map("orders") @ignore
-
-  // Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  orders OndcReconciliationOrder[]
-
-  @@index([status, createdAt])
-  @@map("ondcReconciliation")
-}
-
-model OndcReconciliationOrder {
-  id               String  @id @default(cuid())
-  reconciliationId String
-  orderId          String
-  amount           Decimal
-  currency         String  @default("INR")
-  status           String // PENDING, COMPLETED, FAILED
-
-  // Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  reconciliation OndcReconciliation             @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
-  settlements    OndcReconciliationSettlement[]
-
-  @@index([reconciliationId])
-  @@index([orderId])
-}
-
-model OndcReconciliationSettlement {
-  id           String  @id @default(cuid())
-  orderId      String
-  settlementId String
-  paymentId    String
-  amount       Decimal
-  currency     String  @default("INR")
-  status       String // PENDING, COMPLETED, FAILED
-
-  // Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  order OndcReconciliationOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  @@index([orderId])
-  @@index([settlementId])
 }

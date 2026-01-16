@@ -39,22 +39,13 @@ app.use('/api/driver', driverRoutes);
 import healthRoutes from './routes/healthRoutes';
 app.use('/', healthRoutes);
 
-// Error handling middleware
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error('Error stack:', err.stack);
-  console.error('Error message:', err.message);
-  console.error('Request path:', req.path);
-  console.error('Request method:', req.method);
-  res.status(500).json({ 
-    error: 'Something went wrong!',
-    message: err.message,
-    path: req.path 
-  });
-});
-
 app.get('/', (req: Request, res: Response) => {
   res.send('Hello World');
 });
+
+// Error handling middleware (must be last)
+import errorHandler from './middleware/errorHandler';
+app.use(errorHandler as express.ErrorRequestHandler);
 
 // Start server
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
