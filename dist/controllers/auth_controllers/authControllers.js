@@ -596,6 +596,13 @@ const googleAuth = async (req, res, next) => {
                 }
             }
         }
+        // Type guard: ensure driver has user
+        if (!driver.user) {
+            return res.status(500).json({
+                success: false,
+                message: 'Driver user relation missing'
+            });
+        }
         // Generate access token
         const accessToken = (0, jwtService_1.generateAccessToken)(driver.id);
         return res.status(200).json({
@@ -605,20 +612,13 @@ const googleAuth = async (req, res, next) => {
                 driver: {
                     id: driver.id,
                     name: driver.name,
-                    email: driver.user?.email || email, // From User table
-                    emailVerified: driver.user?.emailVerified || true, // From User table
-                    phoneNumberVerified: driver.user?.phoneNumberVerified || false, // From User table
+                    email: driver.user.email, // From User table
+                    emailVerified: driver.user.emailVerified, // From User table
+                    phoneNumberVerified: driver.user.phoneNumberVerified || false, // From User table
                     profileImage: driver.driverDetails?.profileImage
                 }
             }
         });
-        // Type guard: ensure driver has user
-        if (!driver.user) {
-            return res.status(500).json({
-                success: false,
-                message: 'Driver user relation missing'
-            });
-        }
     }
     catch (error) {
         console.error('Google auth error:', error);

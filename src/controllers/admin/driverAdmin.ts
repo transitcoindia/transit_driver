@@ -301,7 +301,7 @@ export const rejectDriver = async (
     });
 
     // Send rejection email
-    const driverEmail = driver.user?.email || driver.email;
+    const driverEmail = driver.user?.email;
     if (driverEmail) {
       await sendDriverRejectionEmail(driverEmail, reason);
     }
@@ -392,7 +392,7 @@ export const updateDriverApproval = async (
       updateData.rejectionReason = null;
       
       // Send approval email
-      const driverEmail = driver.user?.email || driver.email;
+      const driverEmail = driver.user?.email;
       if (driverEmail) {
         const onboardingToken = generateToken(driver.id);
         await sendDriverApprovalEmail(driverEmail, onboardingToken);
@@ -404,7 +404,7 @@ export const updateDriverApproval = async (
         updateData.rejectionReason = rejectionReason;
         
         // Send rejection email
-        const driverEmail = driver.user?.email || driver.email;
+        const driverEmail = driver.user?.email;
         if (driverEmail) {
           await sendDriverRejectionEmail(driverEmail, rejectionReason);
         }
@@ -416,7 +416,7 @@ export const updateDriverApproval = async (
         updateData.suspensionReason = suspensionReason;
         
         // Send suspension email
-        const driverEmail = driver.user?.email || driver.email;
+        const driverEmail = driver.user?.email;
         if (driverEmail) {
           await sendDriverSuspensionEmail(driverEmail, suspensionReason);
         }
@@ -523,7 +523,7 @@ export const suspendDriver = async (
     });
 
     // Send suspension email
-    const driverEmail = driver.user?.email || driver.email;
+    const driverEmail = driver.user?.email;
     if (driverEmail) {
       await sendDriverSuspensionEmail(driverEmail, reason);
     }
