@@ -691,7 +691,6 @@ export const createOrUpdateVehicleInfo = async (
       seatingCapacity,
       hasCNG,
       hasElectric,
-      roofTop,
       insuranceStatus,
       insuranceExpiryDate,
       registrationExpiryDate,
@@ -727,20 +726,18 @@ export const createOrUpdateVehicleInfo = async (
       seatingCapacity: seatingCapacity,
       hasCNG: hasCNG || false,
       hasElectric: hasElectric || false,
-      roofTop: roofTop || false,
+      // Note: roofTop is not in Vehicle model (only in Cab model)
       insuranceStatus: insuranceStatus || false,
       driverId: driverId,
       color: null, // Optional field
       updatedAt: new Date(),
     };
 
-    // Handle dates
+    // Handle dates - Vehicle model uses insuranceExpiry and registrationExpiry (not Date suffix)
     if (insuranceExpiryDate) {
-      vehicleData.insuranceExpiryDate = new Date(insuranceExpiryDate);
       vehicleData.insuranceExpiry = new Date(insuranceExpiryDate);
     }
     if (registrationExpiryDate) {
-      vehicleData.registrationExpiryDate = new Date(registrationExpiryDate);
       vehicleData.registrationExpiry = new Date(registrationExpiryDate);
     }
 
@@ -813,6 +810,13 @@ export const createOrUpdateVehicleInfo = async (
     });
   } catch (error: any) {
     console.error("Error creating/updating vehicle info:", error);
+    console.error("Error details:", {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      meta: error.meta,
+      stack: error.stack,
+    });
     
     // Handle validation errors
     if (error.name === "ZodError") {
@@ -834,7 +838,21 @@ export const createOrUpdateVehicleInfo = async (
       );
     }
 
-    return next(new AppError("Failed to create/update vehicle information", 500));
+    // Handle Prisma field errors (unknown field, etc.)
+    if (error.code === "P2009" || error.code === "P2010") {
+      console.error("Prisma schema mismatch detected:", error.message);
+      return next(
+        new AppError(
+          "Database schema mismatch. Please contact support.",
+          500
+        )
+      );
+    }
+
+    return next(new AppError(
+      `Failed to create/update vehicle information: ${error.message || "Unknown error"}`,
+      500
+    ));
   }
 };
 
