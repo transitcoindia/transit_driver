@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../../prismaClient";
 import AppError from "../../utils/AppError";
-import { uploadToS3 } from "../../utils/s3Upload";
+import { uploadToSupabase } from "../../utils/supabaseUpload";
 import fs from "fs";
 import { driverVehicleInfoSchema } from "../../validator/driverValidation";
 
@@ -334,9 +334,9 @@ export const uploadDocuments = async (
           continue;
         }
 
-        // Upload to S3
-        const s3FileUrl = await uploadToS3(file, "driver-documents");
-        console.log("S3 upload successful", {
+        // Upload to Supabase
+        const s3FileUrl = await uploadToSupabase(file, "driver-documents");
+        console.log("Supabase upload successful", {
           fileName: file.originalname,
           s3FileUrl,
         });
@@ -479,6 +479,12 @@ export const uploadVehicleImages = async (
     }
 
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    
+    // Debug: Log what files were received
+    console.log("Upload vehicle images - Files received:", {
+      fileFields: Object.keys(files),
+      fileCounts: Object.entries(files).map(([key, value]) => ({ [key]: Array.isArray(value) ? value.length : 0 })),
+    });
 
     // Check if vehicle exists for this driver
     const vehicle = await prisma.vehicle.findUnique({
@@ -528,14 +534,22 @@ export const uploadVehicleImages = async (
             uploadErrors.push(`Cover image not found: ${file.originalname}`);
             continue;
           }
-          const s3Url = await uploadToS3(file, "vehicle-images");
+          const s3Url = await uploadToSupabase(file, "vehicle-images");
           uploadedUrls.cover.push(s3Url);
           // Clean up local file
           if (fs.existsSync(file.path)) {
             fs.unlinkSync(file.path);
           }
         } catch (error) {
-          uploadErrors.push(`Failed to upload cover image ${file.originalname}: ${error instanceof Error ? error.message : "Unknown error"}`);
+          const errorMsg = error instanceof Error ? error.message : "Unknown error";
+          const errorDetails = error instanceof Error ? error.stack : String(error);
+          console.error(`Supabase upload failed for cover image ${file.originalname}:`, {
+            error: errorMsg,
+            details: errorDetails,
+            filePath: file.path,
+            fileExists: file.path ? fs.existsSync(file.path) : false,
+          });
+          uploadErrors.push(`Failed to upload cover image ${file.originalname}: ${errorMsg}`);
           if (file.path && fs.existsSync(file.path)) {
             fs.unlinkSync(file.path);
           }
@@ -551,7 +565,7 @@ export const uploadVehicleImages = async (
             uploadErrors.push(`Interior image not found: ${file.originalname}`);
             continue;
           }
-          const s3Url = await uploadToS3(file, "vehicle-images");
+          const s3Url = await uploadToSupabase(file, "vehicle-images");
           uploadedUrls.interior.push(s3Url);
           // Clean up local file
           if (fs.existsSync(file.path)) {
@@ -574,7 +588,7 @@ export const uploadVehicleImages = async (
             uploadErrors.push(`Exterior image not found: ${file.originalname}`);
             continue;
           }
-          const s3Url = await uploadToS3(file, "vehicle-images");
+          const s3Url = await uploadToSupabase(file, "vehicle-images");
           uploadedUrls.exterior.push(s3Url);
           // Clean up local file
           if (fs.existsSync(file.path)) {
@@ -591,8 +605,32 @@ export const uploadVehicleImages = async (
 
     // Check if any images were successfully uploaded
     const totalUploaded = uploadedUrls.cover.length + uploadedUrls.interior.length + uploadedUrls.exterior.length;
+    
+    // Debug: Log what was processed
+    console.log("Upload vehicle images - Processing summary:", {
+      totalUploaded,
+      coverCount: uploadedUrls.cover.length,
+      interiorCount: uploadedUrls.interior.length,
+      exteriorCount: uploadedUrls.exterior.length,
+      uploadErrors,
+      fileFieldsReceived: Object.keys(files),
+    });
+    
     if (totalUploaded === 0) {
-      return next(new AppError("No images were successfully uploaded. " + (uploadErrors.length > 0 ? uploadErrors.join("; ") : ""), 400));
+      // Provide more detailed error message
+      const errorDetails = [];
+      if (uploadErrors.length > 0) {
+        errorDetails.push(...uploadErrors);
+      } else {
+        // If no errors but also no uploads, the files might be empty or invalid
+        const fileFieldInfo = Object.entries(files).map(([field, fileArray]) => {
+          const count = Array.isArray(fileArray) ? fileArray.length : 0;
+          const hasValidFiles = Array.isArray(fileArray) && fileArray.some(f => f && f.path);
+          return `${field}: ${count} file(s)${hasValidFiles ? '' : ' (no valid file paths)'}`;
+        }).join(', ');
+        errorDetails.push(`Files received but not processed. Details: ${fileFieldInfo || 'No valid files found'}`);
+      }
+      return next(new AppError("No images were successfully uploaded. " + errorDetails.join("; "), 400));
     }
 
     // Merge with existing images (append new images to existing ones)

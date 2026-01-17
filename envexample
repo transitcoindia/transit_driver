@@ -20,3 +20,7 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret-here
 # Other services
 REDIS_URL=redis://localhost:6379
 
+# Supabase Storage
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
+# Optional: SUPABASE_ANON_KEY=your-anon-key-here (if using anon key instead)

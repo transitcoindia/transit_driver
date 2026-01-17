@@ -67,7 +67,7 @@ if (!fs.existsSync(tempUploadsDir)) {
     fs.mkdirSync(tempUploadsDir, { recursive: true });
 }
 
-// Configure multer for temporary local storage before S3 upload
+// Configure multer for temporary local storage before Supabase upload
 const storage = multer.diskStorage({
     destination: (req: express.Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
         cb(null, tempUploadsDir);

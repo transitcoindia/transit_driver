@@ -16,7 +16,7 @@ const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabase
  * Upload file to Supabase Storage
  * Returns the public URL for the file
  */
-export const uploadToS3 = async (
+export const uploadToSupabase = async (
     file: Express.Multer.File,
     folder: string = 'driver-documents'
 ): Promise<string> => {

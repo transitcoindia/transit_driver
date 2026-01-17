@@ -28,7 +28,7 @@ if (!fs_1.default.existsSync(uploadsDir)) {
 if (!fs_1.default.existsSync(tempUploadsDir)) {
     fs_1.default.mkdirSync(tempUploadsDir, { recursive: true });
 }
-// Configure multer for temporary local storage before S3 upload
+// Configure multer for temporary local storage before Supabase upload
 const storage = multer_1.default.diskStorage({
     destination: (req, file, cb) => {
         cb(null, tempUploadsDir);
