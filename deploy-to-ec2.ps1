@@ -75,7 +75,7 @@ Write-Host ""
 # Build deployment command
 $deployCommands = @(
     "cd ~/transit_driver",
-    "echo '📦 Pulling latest code...'",
+    "echo '[INFO] Pulling latest code...'",
     "git fetch origin",
     "git checkout $BRANCH",
     "git pull origin $BRANCH"
@@ -83,34 +83,34 @@ $deployCommands = @(
 
 if (-not $SkipInstall) {
     $deployCommands += @(
-        "echo '📥 Installing dependencies...'",
+        "echo '[INFO] Installing dependencies...'",
         "npm install"
     )
 }
 
 $deployCommands += @(
-    "echo '🔧 Generating Prisma client...'",
+    "echo '[INFO] Generating Prisma client...'",
     "npx prisma generate",
-    "echo '🏗️  Building TypeScript...'",
+    "echo '[INFO] Building TypeScript...'",
     "npm run build"
 )
 
 if (-not $SkipSchema) {
     $deployCommands += @(
-        "echo '🗄️  Checking for schema changes...'",
-        "if [ -f push-schema-ec2.sh ]; then ./push-schema-ec2.sh; else echo '⚠️  Schema script not found, skipping'; fi"
+        "echo '[INFO] Checking for schema changes...'",
+        "if [ -f push-schema-ec2.sh ]; then ./push-schema-ec2.sh; else echo '[WARN] Schema script not found, skipping'; fi"
     )
 }
 
 $deployCommands += @(
-    "echo '🔄 Restarting service...'",
+    "echo '[INFO] Restarting service...'",
     "pm2 restart transit-driver",
     "pm2 save",
     "echo ''",
-    "echo '✅ Deployment complete!'",
+    "echo '[SUCCESS] Deployment complete!'",
     "pm2 status",
     "echo ''",
-    "echo '📋 Recent logs:'",
+    "echo '[INFO] Recent logs:'",
     "pm2 logs transit-driver --lines 20 --nostream"
 )
 
