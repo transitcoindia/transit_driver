@@ -33,11 +33,11 @@ const authenticate = async (req, res, next) => {
         if (!driver || !driver.user) {
             return res.status(401).json({ message: 'Authentication failed. Please login.' });
         }
-        // Check if driver's phone is verified (from User table)
-        if (!driver.user.phoneNumberVerified) {
-            return res.status(401).json({ message: 'Phone number not verified. Please verify your phone number.' });
-        }
         // Attach driver to request object (using User data for email/phone)
+        // NOTE: We no longer block requests when phoneNumberVerified is false.
+        //       Instead, downstream handlers (like profile fetch) can read the
+        //       flag and the client can decide what to show. This allows
+        //       partially-onboarded drivers to still fetch their profile.
         req.driver = {
             id: driver.id,
             email: driver.user.email,
