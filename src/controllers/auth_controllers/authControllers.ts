@@ -86,8 +86,8 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
 
-        // Save OTP to database
         if (user.phoneNumber) {
+            // Save OTP to database
             await prisma.otp.create({
                 data: {
                     phoneNumber: user.phoneNumber,
@@ -95,13 +95,15 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
                     expiresAt
                 }
             });
-        }
 
-        // Send OTP via Fast2SMS
-        // const otpResponse = await sendOtp(user.phoneNumber, otp);
-        // if (!otpResponse || otpResponse.return === false) {
-        //     return next(new AppError('Failed to send OTP. Please try again.', 500));
-        // }
+            // Send OTP via Fast2SMS
+            try {
+                await sendOtp(user.phoneNumber, otp);
+            } catch (e) {
+                console.error('Failed to send registration OTP via Fast2SMS:', e);
+                // We still allow the flow to continue so user can retry or use fallback
+            }
+        }
 
         return res.status(201).json({
             success: true,
@@ -368,11 +370,13 @@ export const loginWithPhoneNumber = async (req: Request, res: Response, next: Ne
             }
         });
 
-        // // Send OTP via Fast2SMS
-        // const otpResponse = await sendOtp(phoneNumber, otp);
-        // if (!otpResponse || otpResponse.return === false) {
-        //     return next(new AppError('Failed to send OTP. Please try again.', 500));
-        // }
+        // Send OTP via Fast2SMS (non-blocking for login UX)
+        try {
+            await sendOtp(phoneNumber, otp);
+        } catch (e) {
+            console.error('Failed to send login OTP via Fast2SMS:', e);
+            // Do not block login OTP issuance; client can show generic error if needed
+        }
 
         return res.status(200).json({
             success: true,

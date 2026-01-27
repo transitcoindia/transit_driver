@@ -76,8 +76,8 @@ const register = async (req, res, next) => {
         // Generate and send OTP for phone verification (using user.phoneNumber)
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
-        // Save OTP to database
         if (user.phoneNumber) {
+            // Save OTP to database
             await prismaClient_1.prisma.otp.create({
                 data: {
                     phoneNumber: user.phoneNumber,
@@ -85,12 +85,15 @@ const register = async (req, res, next) => {
                     expiresAt
                 }
             });
+            // Send OTP via Fast2SMS
+            try {
+                await (0, otpService_1.sendOtp)(user.phoneNumber, otp);
+            }
+            catch (e) {
+                console.error('Failed to send registration OTP via Fast2SMS:', e);
+                // We still allow the flow to continue so user can retry or use fallback
+            }
         }
-        // Send OTP via Fast2SMS
-        // const otpResponse = await sendOtp(user.phoneNumber, otp);
-        // if (!otpResponse || otpResponse.return === false) {
-        //     return next(new AppError('Failed to send OTP. Please try again.', 500));
-        // }
         return res.status(201).json({
             success: true,
             message: 'Driver account created successfully. Please verify your email and phone number.',
@@ -329,11 +332,14 @@ const loginWithPhoneNumber = async (req, res, next) => {
                 expiresAt
             }
         });
-        // // Send OTP via Fast2SMS
-        // const otpResponse = await sendOtp(phoneNumber, otp);
-        // if (!otpResponse || otpResponse.return === false) {
-        //     return next(new AppError('Failed to send OTP. Please try again.', 500));
-        // }
+        // Send OTP via Fast2SMS (non-blocking for login UX)
+        try {
+            await (0, otpService_1.sendOtp)(phoneNumber, otp);
+        }
+        catch (e) {
+            console.error('Failed to send login OTP via Fast2SMS:', e);
+            // Do not block login OTP issuance; client can show generic error if needed
+        }
         return res.status(200).json({
             success: true,
             message: 'OTP sent successfully to your phone number',
