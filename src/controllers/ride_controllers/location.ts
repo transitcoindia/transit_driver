@@ -1,6 +1,12 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../../prismaClient";
 import AppError from "../../utils/AppError";
+import redis from "../../redis";
+
+const DRIVER_AVAILABILITY_TTL_SECONDS = 60; // Heartbeat-based availability window
+
+const getDriverAvailabilityKey = (driverId: string) =>
+  `driver:${driverId}:availability`;
 
 /**
  * Update driver's current location
@@ -161,6 +167,36 @@ export const toggleDriverAvailability = async (
       },
     });
 
+    // Manage Redis-based real-time availability with TTL
+    const availabilityKey = getDriverAvailabilityKey(driverId);
+    const now = Date.now();
+
+    try {
+      if (isAvailable) {
+        // Driver is going ONLINE: create/refresh availability key with TTL
+        await redis.set(
+          availabilityKey,
+          JSON.stringify({
+            driverId,
+            status: "ONLINE",
+            lastPing: now,
+            updatedAt: now,
+          }),
+          "EX",
+          DRIVER_AVAILABILITY_TTL_SECONDS
+        );
+      } else {
+        // Driver is going OFFLINE: remove availability key
+        await redis.del(availabilityKey);
+      }
+    } catch (redisError) {
+      console.warn(
+        "Driver availability Redis update failed:",
+        redisError instanceof Error ? redisError.message : redisError
+      );
+      // Do not fail the request if Redis is down
+    }
+
     return res.status(200).json({
       success: true,
       message: `Driver ${isAvailable ? "online" : "offline"}`,
@@ -171,6 +207,62 @@ export const toggleDriverAvailability = async (
   } catch (error: any) {
     console.error("Error toggling driver availability:", error);
     return next(new AppError("Failed to toggle availability", 500));
+  }
+};
+
+/**
+ * Heartbeat endpoint to keep driver ONLINE using Redis TTL
+ * This should be called by the driver app every 15–30 seconds.
+ */
+export const driverHeartbeat = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    if (!req.driver?.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Driver not authenticated",
+      });
+    }
+    const driverId = req.driver.id as string;
+
+    const availabilityKey = getDriverAvailabilityKey(driverId);
+    const now = Date.now();
+
+    try {
+      await redis.set(
+        availabilityKey,
+        JSON.stringify({
+          driverId,
+          status: "ONLINE",
+          lastPing: now,
+          updatedAt: now,
+        }),
+        "EX",
+        DRIVER_AVAILABILITY_TTL_SECONDS
+      );
+    } catch (redisError) {
+      console.warn(
+        "Driver heartbeat Redis update failed:",
+        redisError instanceof Error ? redisError.message : redisError
+      );
+      // Still return success so that client isn't blocked by Redis issues
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Heartbeat received",
+      data: {
+        driverId,
+        lastPing: now,
+        ttlSeconds: DRIVER_AVAILABILITY_TTL_SECONDS,
+      },
+    });
+  } catch (error: any) {
+    console.error("Error in driver heartbeat:", error);
+    return next(new AppError("Failed to process heartbeat", 500));
   }
 };
 

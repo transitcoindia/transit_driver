@@ -117,6 +117,7 @@ router.get('/payments/summary', authMiddle_1.authenticate, payment_1.getDriverPa
 router.post('/location', authMiddle_1.authenticate, location_1.updateDriverLocation);
 router.get('/location', authMiddle_1.authenticate, location_1.getDriverLocation);
 router.post('/availability', authMiddle_1.authenticate, location_1.toggleDriverAvailability);
+router.post('/availability/heartbeat', authMiddle_1.authenticate, location_1.driverHeartbeat);
 // Subscription routes
 router.post('/subscription/activate', authMiddle_1.authenticate, subscription_1.activateSubscription);
 router.get('/subscription', authMiddle_1.authenticate, subscription_1.getCurrentSubscription);

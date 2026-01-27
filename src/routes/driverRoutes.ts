@@ -32,6 +32,7 @@ import {
     updateDriverLocation,
     toggleDriverAvailability,
     getDriverLocation,
+    driverHeartbeat,
 } from '../controllers/ride_controllers/location';
 import {
     getDriverPaymentHistory,
@@ -167,6 +168,7 @@ router.get('/payments/summary', authenticate as RequestHandler, getDriverPayment
 router.post('/location', authenticate as RequestHandler, updateDriverLocation as RequestHandler);
 router.get('/location', authenticate as RequestHandler, getDriverLocation as RequestHandler);
 router.post('/availability', authenticate as RequestHandler, toggleDriverAvailability as RequestHandler);
+router.post('/availability/heartbeat', authenticate as RequestHandler, driverHeartbeat as RequestHandler);
 
 // Subscription routes
 router.post('/subscription/activate', authenticate as RequestHandler, activateSubscription as RequestHandler);
