@@ -95,6 +95,7 @@ const router = express_1.default.Router();
 // Registration routes
 router.post('/register', authControllers_1.register);
 router.post('/verify-registration-otp', authControllers_1.verifyRegistrationOTP);
+router.post('/resend-registration-otp', authControllers_1.resendRegistrationOtp); // Resend OTP when expired or not received
 router.get('/verify-email', authControllers_1.verifyDriverEmail);
 // Login routes (email/phone + password, or phone + OTP)
 router.post('/login', authControllers_1.loginWithEmail); // identifier (email or phone) + password

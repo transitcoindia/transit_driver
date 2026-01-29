@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 export declare const register: (req: Request, res: Response, next: NextFunction) => Promise<void | Response<any, Record<string, any>>>;
+export declare const resendRegistrationOtp: (req: Request, res: Response, next: NextFunction) => Promise<void | Response<any, Record<string, any>>>;
 export declare const verifyRegistrationOTP: (req: Request, res: Response, next: NextFunction) => Promise<void | Response<any, Record<string, any>>>;
 export declare const verifyDriverEmail: (req: Request, res: Response) => Promise<void>;
 export declare const loginWithEmail: (req: Request, res: Response, next: NextFunction) => Promise<void | Response<any, Record<string, any>>>;

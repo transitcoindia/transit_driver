@@ -9,6 +9,7 @@ import {
     loginWithPhoneNumber,
     verifyPhoneOTP,
     verifyRegistrationOTP,
+    resendRegistrationOtp,
     getUserDetails,
     googleAuth,
     sendResetEmailController,

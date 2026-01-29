@@ -336,15 +336,16 @@ export const verifyDriverEmail = async (req: Request, res: Response) => {
 // Login with email or phone + password (single endpoint for password login)
 export const loginWithEmail = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { identifier, password } = req.body;
-        if (!identifier || !password) {
+        const { identifier, email, phoneNumber, password } = req.body;
+        const loginId = identifier ?? email ?? phoneNumber;
+        if (!loginId || !password) {
             return res.status(400).json({
                 success: false,
                 message: 'Identifier (email or phone) and password are required'
             });
         }
 
-        const isEmail = identifier.includes('@');
+        const isEmail = loginId.includes('@');
         const user = await prisma.user.findFirst({
             where: isEmail
                 ? { email: loginId, isDriver: true }

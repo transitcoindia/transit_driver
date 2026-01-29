@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resetPassword = exports.sendResetEmailController = exports.googleAuth = exports.getUserDetails = exports.verifyPhoneOTP = exports.loginWithPhoneNumber = exports.loginWithEmail = exports.verifyDriverEmail = exports.verifyRegistrationOTP = exports.register = void 0;
+exports.resetPassword = exports.sendResetEmailController = exports.googleAuth = exports.getUserDetails = exports.verifyPhoneOTP = exports.loginWithPhoneNumber = exports.loginWithEmail = exports.verifyDriverEmail = exports.verifyRegistrationOTP = exports.resendRegistrationOtp = exports.register = void 0;
 const client_1 = require("@prisma/client");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const prismaClient_1 = require("../../prismaClient");
@@ -157,6 +157,60 @@ Prisma error meta: ${JSON.stringify(error.meta)}`;
     }
 };
 exports.register = register;
+// Resend registration OTP (when OTP expired or user didn't receive it) – no auth
+const resendRegistrationOtp = async (req, res, next) => {
+    try {
+        const { phoneNumber } = req.body;
+        if (!phoneNumber) {
+            return next(new AppError_1.default('Phone number is required', 400));
+        }
+        const user = await prismaClient_1.prisma.user.findFirst({
+            where: { phoneNumber, isDriver: true },
+            include: { driver: true },
+        });
+        if (!user || !user.driver) {
+            return res.status(401).json({
+                success: false,
+                message: 'No driver account found for this phone number',
+            });
+        }
+        if (user.phoneNumberVerified) {
+            return res.status(400).json({
+                success: false,
+                message: 'Phone number is already verified',
+            });
+        }
+        const otp = generateOTP();
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+        await prismaClient_1.prisma.otp.deleteMany({ where: { phoneNumber } });
+        await prismaClient_1.prisma.otp.create({
+            data: { phoneNumber, otp, expiresAt },
+        });
+        try {
+            await (0, otpService_1.sendOtp)(phoneNumber, otp);
+        }
+        catch (e) {
+            console.error('Failed to send registration OTP via Fast2SMS:', e);
+        }
+        if (user.email) {
+            try {
+                await (0, emailService_1.sendDriverOtpEmail)(user.email, otp, 'registration');
+            }
+            catch (e) {
+                console.error('Failed to send registration OTP via email:', e);
+            }
+        }
+        return res.status(200).json({
+            success: true,
+            message: 'OTP sent again to your phone and email',
+        });
+    }
+    catch (error) {
+        console.error('Error resending registration OTP:', error);
+        return next(new AppError_1.default('Failed to resend OTP', 500));
+    }
+};
+exports.resendRegistrationOtp = resendRegistrationOtp;
 // Verify phone number during registration
 const verifyRegistrationOTP = async (req, res, next) => {
     try {
@@ -255,14 +309,15 @@ exports.verifyDriverEmail = verifyDriverEmail;
 // Login with email or phone + password (single endpoint for password login)
 const loginWithEmail = async (req, res, next) => {
     try {
-        const { identifier, password } = req.body;
-        if (!identifier || !password) {
+        const { identifier, email, phoneNumber, password } = req.body;
+        const loginId = identifier ?? email ?? phoneNumber;
+        if (!loginId || !password) {
             return res.status(400).json({
                 success: false,
                 message: 'Identifier (email or phone) and password are required'
             });
         }
-        const isEmail = identifier.includes('@');
+        const isEmail = loginId.includes('@');
         const user = await prismaClient_1.prisma.user.findFirst({
             where: isEmail
                 ? { email: loginId, isDriver: true }
