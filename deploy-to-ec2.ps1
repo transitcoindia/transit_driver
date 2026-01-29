@@ -72,15 +72,14 @@ Write-Host ""
 Write-Host "Step 3: Connecting to EC2 and deploying..." -ForegroundColor Cyan
 Write-Host ""
 
-# Build deployment command (reset local changes on EC2 so pull never fails on dist/)
+# Build deployment command (force EC2 repo to match remote main)
 $deployCommands = @(
     "cd ~/transit_driver",
     "echo '[INFO] Pulling latest code...'",
     "git fetch origin",
-    "git reset --hard HEAD",
-    "git clean -fd",
     "git checkout $BRANCH",
-    "git pull origin $BRANCH"
+    "git reset --hard origin/$BRANCH",
+    "git clean -fd"
 )
 
 if (-not $SkipInstall) {
