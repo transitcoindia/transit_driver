@@ -162,19 +162,39 @@ export declare const verificationTokenSchema: z.ZodObject<{
 }, {
     token: string;
 }>;
-export declare const subscriptionActivateSchema: z.ZodObject<{
-    amount: z.ZodNumber;
+export declare const subscriptionActivateSchema: z.ZodEffects<z.ZodObject<{
+    planId: z.ZodOptional<z.ZodString>;
+    amount: z.ZodOptional<z.ZodNumber>;
     paymentMode: z.ZodString;
     transactionId: z.ZodOptional<z.ZodString>;
     durationDays: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+    includedMinutes: z.ZodOptional<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
     paymentMode: string;
-    amount: number;
     durationDays: number;
     transactionId?: string | undefined;
+    amount?: number | undefined;
+    planId?: string | undefined;
+    includedMinutes?: number | undefined;
 }, {
     paymentMode: string;
-    amount: number;
     transactionId?: string | undefined;
+    amount?: number | undefined;
+    planId?: string | undefined;
     durationDays?: number | undefined;
+    includedMinutes?: number | undefined;
+}>, {
+    paymentMode: string;
+    durationDays: number;
+    transactionId?: string | undefined;
+    amount?: number | undefined;
+    planId?: string | undefined;
+    includedMinutes?: number | undefined;
+}, {
+    paymentMode: string;
+    transactionId?: string | undefined;
+    amount?: number | undefined;
+    planId?: string | undefined;
+    durationDays?: number | undefined;
+    includedMinutes?: number | undefined;
 }>;

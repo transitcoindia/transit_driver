@@ -103,10 +103,21 @@ exports.verificationTokenSchema = zod_1.z.object({
     token: zod_1.z.string().min(1, "Verification token is required"),
 });
 // Subscription activation validation schema
+// Two modes:
+// 1) Catalogue plan: pass planId, backend derives amount/duration/minutes
+// 2) Custom: omit planId and pass amount/durationDays/includedMinutes directly
 exports.subscriptionActivateSchema = zod_1.z.object({
-    amount: zod_1.z.number().positive("Amount must be positive"),
+    planId: zod_1.z.string().min(1).optional(),
+    amount: zod_1.z.number().positive("Amount must be positive").optional(),
     paymentMode: zod_1.z.string().min(1, "Payment mode is required"),
     transactionId: zod_1.z.string().optional(),
     durationDays: zod_1.z.number().int().min(1).max(365).optional().default(30), // Default 30 days
+    includedMinutes: zod_1.z.number().int().min(1).optional(), // Optional quota in minutes
+}).refine(data => {
+    // Either we have a catalogue plan, or a raw amount
+    return !!data.planId || typeof data.amount === 'number';
+}, {
+    message: "Either planId or amount must be provided",
+    path: ["planId"],
 });
 //# sourceMappingURL=driverValidation.js.map

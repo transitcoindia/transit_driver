@@ -3,7 +3,9 @@ import { Resend } from 'resend';
 // Conditionally initialize Resend only if API key is present
 let resend: Resend | null = null;
 if (process.env.RESEND_API_KEY) {
-  resend = new Resend(process.env.RESEND_API_KEY);
+  // Prefer RESEND_SERVICE_ROLE_KEY if provided, otherwise use RESEND_API_KEY
+  const apiKey = process.env.RESEND_SERVICE_ROLE_KEY || process.env.RESEND_API_KEY;
+  resend = new Resend(apiKey);
 } else {
   console.warn('⚠️  RESEND_API_KEY is not set. Email functionality will be disabled.');
 }
@@ -85,6 +87,51 @@ interface ContactFormData {
   message: string;
   mobile?: string;
 }
+
+/**
+ * Send an OTP email to the driver (backup to SMS).
+ */
+export const sendDriverOtpEmail = async (
+  email: string,
+  otp: string,
+  context: 'registration' | 'login' | 'password_reset' | 'generic' = 'login'
+): Promise<boolean> => {
+  if (!resend) {
+    console.warn('⚠️  Email not sent: RESEND_API_KEY is not configured');
+    return false;
+  }
+
+  const subject =
+    context === 'registration'
+      ? 'Verify your Transit driver account (OTP)'
+      : context === 'password_reset'
+      ? 'Reset your Transit driver password (OTP)'
+      : 'Your Transit driver OTP';
+
+  try {
+    await resend.emails.send({
+      from: 'Transit Driver <driver@transitco.in>',
+      to: email,
+      subject,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>${subject}</h2>
+          <p>Your one-time password (OTP) is:</p>
+          <div style="margin: 20px 0; font-size: 24px; font-weight: bold;">
+            ${otp}
+          </div>
+          <p>This code is valid for a limited time. Do not share it with anyone.</p>
+          <p>If you did not request this, you can safely ignore this email.</p>
+          <p>Best regards,<br/>The Transit Driver Team</p>
+        </div>
+      `,
+    });
+    return true;
+  } catch (error) {
+    console.error('Error sending driver OTP email:', error);
+    return false;
+  }
+};
 
 export const sendContactEmail = async (formData: ContactFormData) => {
   try {

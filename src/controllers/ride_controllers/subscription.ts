@@ -4,6 +4,58 @@ import AppError from "../../utils/AppError";
 import { subscriptionActivateSchema } from "../../validator/driverValidation";
 import { Prisma } from "@prisma/client";
 
+type VehiclePlanType = "BIKE" | "AUTO" | "CAR";
+
+interface SubscriptionPlan {
+  id: string;
+  vehicleType: VehiclePlanType;
+  label: string;
+  price: number;
+  durationDays: number;
+  includedMinutes: number | null; // null = unlimited minutes (date-based only)
+}
+
+// Subscription plan catalogue based on your matrix
+const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
+  // Bike plans
+  { id: "bike_daily_4h", vehicleType: "BIKE", label: "Bike Daily 4h", price: 20, durationDays: 1, includedMinutes: 4 * 60 },
+  { id: "bike_daily_8h", vehicleType: "BIKE", label: "Bike Daily 8h", price: 40, durationDays: 1, includedMinutes: 8 * 60 },
+  { id: "bike_daily_12h", vehicleType: "BIKE", label: "Bike Daily 12h", price: 60, durationDays: 1, includedMinutes: 12 * 60 },
+  { id: "bike_weekly_5d", vehicleType: "BIKE", label: "Bike Weekly 5x8h", price: 180, durationDays: 5, includedMinutes: 5 * 8 * 60 },
+  { id: "bike_weekly_7d", vehicleType: "BIKE", label: "Bike Weekly 7x8h", price: 250, durationDays: 7, includedMinutes: 7 * 8 * 60 },
+  { id: "bike_monthly_8h", vehicleType: "BIKE", label: "Bike Monthly 30x8h", price: 899, durationDays: 30, includedMinutes: 30 * 8 * 60 },
+  { id: "bike_monthly_unlimited", vehicleType: "BIKE", label: "Bike Monthly Unlimited", price: 1199, durationDays: 30, includedMinutes: null },
+
+  // Auto plans
+  { id: "auto_daily_4h", vehicleType: "AUTO", label: "Auto Daily 4h", price: 25, durationDays: 1, includedMinutes: 4 * 60 },
+  { id: "auto_daily_8h", vehicleType: "AUTO", label: "Auto Daily 8h", price: 50, durationDays: 1, includedMinutes: 8 * 60 },
+  { id: "auto_daily_12h", vehicleType: "AUTO", label: "Auto Daily 12h", price: 70, durationDays: 1, includedMinutes: 12 * 60 },
+  { id: "auto_weekly_5d", vehicleType: "AUTO", label: "Auto Weekly 5x8h", price: 220, durationDays: 5, includedMinutes: 5 * 8 * 60 },
+  { id: "auto_weekly_7d", vehicleType: "AUTO", label: "Auto Weekly 7x8h", price: 300, durationDays: 7, includedMinutes: 7 * 8 * 60 },
+  { id: "auto_monthly_8h", vehicleType: "AUTO", label: "Auto Monthly 30x8h", price: 999, durationDays: 30, includedMinutes: 30 * 8 * 60 },
+  { id: "auto_monthly_unlimited", vehicleType: "AUTO", label: "Auto Monthly Unlimited", price: 1399, durationDays: 30, includedMinutes: null },
+
+  // Car plans
+  { id: "car_daily_4h", vehicleType: "CAR", label: "Car Daily 4h", price: 30, durationDays: 1, includedMinutes: 4 * 60 },
+  { id: "car_daily_8h", vehicleType: "CAR", label: "Car Daily 8h", price: 60, durationDays: 1, includedMinutes: 8 * 60 },
+  { id: "car_daily_12h", vehicleType: "CAR", label: "Car Daily 12h", price: 90, durationDays: 1, includedMinutes: 12 * 60 },
+  { id: "car_weekly_5d", vehicleType: "CAR", label: "Car Weekly 5x8h", price: 280, durationDays: 5, includedMinutes: 5 * 8 * 60 },
+  { id: "car_weekly_7d", vehicleType: "CAR", label: "Car Weekly 7x8h", price: 350, durationDays: 7, includedMinutes: 7 * 8 * 60 },
+  { id: "car_monthly_8h", vehicleType: "CAR", label: "Car Monthly 30x8h", price: 1299, durationDays: 30, includedMinutes: 30 * 8 * 60 },
+  { id: "car_monthly_unlimited", vehicleType: "CAR", label: "Car Monthly Unlimited", price: 1699, durationDays: 30, includedMinutes: null },
+];
+
+// Helper to map Vehicle.model/vehicleType to plan vehicle type
+function normalizeVehicleType(raw: string | null | undefined): VehiclePlanType | null {
+  if (!raw) return null;
+  const v = raw.toLowerCase();
+  if (v.includes("bike") || v.includes("scooter") || v.includes("cycle")) return "BIKE";
+  if (v.includes("auto") || v.includes("rickshaw") || v.includes("tuk")) return "AUTO";
+  // Default to CAR for typical car terms
+  if (v.includes("car") || v.includes("sedan") || v.includes("suv") || v.includes("hatch")) return "CAR";
+  return null;
+}
+
 // Extend Express Request type to include driver
 declare global {
   namespace Express {
@@ -40,7 +92,7 @@ export const activateSubscription = async (
 
     // Validate request body
     const validatedData = subscriptionActivateSchema.parse(req.body);
-    const { amount, paymentMode, transactionId, durationDays } = validatedData;
+    const { planId, amount, paymentMode, transactionId, durationDays, includedMinutes } = validatedData;
 
     // Check if driver exists
     const driver = await prisma.driver.findUnique({
@@ -51,10 +103,56 @@ export const activateSubscription = async (
       return next(new AppError("Driver not found", 404));
     }
 
+    // If a catalogue plan is provided, derive amount/duration/minutes from it
+    let effectiveAmount = amount ?? 0;
+    let effectiveDurationDays = durationDays;
+    let effectiveIncludedMinutes = includedMinutes;
+    let appliedPlan: SubscriptionPlan | null = null;
+
+    if (planId) {
+      const plan = SUBSCRIPTION_PLANS.find((p) => p.id === planId);
+      if (!plan) {
+        return next(new AppError("Invalid subscription plan", 400));
+      }
+
+      // Ensure driver has a vehicle and its type matches the plan's vehicleType
+      const vehicle = await prisma.vehicle.findUnique({
+        where: { driverId },
+        select: { vehicleType: true, model: true },
+      });
+
+      if (!vehicle) {
+        return next(
+          new AppError(
+            "Vehicle information not found. Please complete vehicle details before buying a plan.",
+            400
+          )
+        );
+      }
+
+      const driverVehicleType = normalizeVehicleType(
+        vehicle.vehicleType || vehicle.model || null
+      );
+
+      if (!driverVehicleType || driverVehicleType !== plan.vehicleType) {
+        return next(
+          new AppError(
+            `This plan is only available for ${plan.vehicleType.toLowerCase()} drivers`,
+            400
+          )
+        );
+      }
+
+      effectiveAmount = plan.price;
+      effectiveDurationDays = plan.durationDays;
+      effectiveIncludedMinutes = plan.includedMinutes ?? undefined;
+      appliedPlan = plan;
+    }
+
     // Calculate subscription dates
     const startTime = new Date();
     const expire = new Date(startTime);
-    expire.setDate(expire.getDate() + durationDays);
+    expire.setDate(expire.getDate() + effectiveDurationDays);
 
     // Use transaction to create both payment and subscription records
     const result = await prisma.$transaction(async (tx) => {
@@ -62,7 +160,7 @@ export const activateSubscription = async (
       const payment = await tx.subscriptionPayment.create({
         data: {
           driverId: driverId,
-          amount: amount,
+          amount: effectiveAmount,
           paymentMode: paymentMode,
           transactionId: transactionId || null,
           status: transactionId ? "SUCCESS" : "PENDING", // If transactionId provided, assume SUCCESS
@@ -86,11 +184,14 @@ export const activateSubscription = async (
           driverId: driverId,
           startTime: startTime,
           expire: expire,
-          amountPaid: amount,
+          amountPaid: effectiveAmount,
           status: "ACTIVE",
           paymentId: payment.id,
           paymentMode: paymentMode,
           autoRenewed: false,
+          // If includedMinutes is provided, start quota from that;
+          // otherwise remainingMinutes stays null and only expiry matters.
+          remainingMinutes: effectiveIncludedMinutes ?? null,
         },
       });
 
@@ -110,6 +211,7 @@ export const activateSubscription = async (
           status: result.subscription.status,
           paymentMode: result.subscription.paymentMode,
           autoRenewed: result.subscription.autoRenewed,
+          planId: appliedPlan?.id ?? null,
         },
         payment: {
           id: result.payment.id,

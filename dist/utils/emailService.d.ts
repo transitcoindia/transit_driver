@@ -6,6 +6,10 @@ interface ContactFormData {
     message: string;
     mobile?: string;
 }
+/**
+ * Send an OTP email to the driver (backup to SMS).
+ */
+export declare const sendDriverOtpEmail: (email: string, otp: string, context?: "registration" | "login" | "password_reset" | "generic") => Promise<boolean>;
 export declare const sendContactEmail: (formData: ContactFormData) => Promise<{
     success: boolean;
 } | undefined>;

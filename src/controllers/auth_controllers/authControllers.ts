@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 import  {prisma}  from "../../prismaClient";
 import AppError from '../../utils/AppError';
 import { JwtPayload } from 'jsonwebtoken';
-import { sendDriverVerificationEmail } from '../../utils/emailService';
+import { sendDriverVerificationEmail, sendDriverOtpEmail } from '../../utils/emailService';
 import { generateToken, verifyToken, generateAccessToken } from '../../utils/jwtService';
 import { driverSignupSchema } from '../../validator/driverValidation';
 import { sendOtp } from '../../utils/otpService';
@@ -96,12 +96,20 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
                 }
             });
 
-            // Send OTP via Fast2SMS
+            // Send OTP via Fast2SMS (primary)
             try {
                 await sendOtp(user.phoneNumber, otp);
             } catch (e) {
                 console.error('Failed to send registration OTP via Fast2SMS:', e);
-                // We still allow the flow to continue so user can retry or use fallback
+            }
+        }
+
+        // Also send OTP to driver's email as backup if available
+        if (user.email) {
+            try {
+                await sendDriverOtpEmail(user.email, otp, 'registration');
+            } catch (e) {
+                console.error('Failed to send registration OTP via email:', e);
             }
         }
 
@@ -370,12 +378,21 @@ export const loginWithPhoneNumber = async (req: Request, res: Response, next: Ne
             }
         });
 
-        // Send OTP via Fast2SMS (non-blocking for login UX)
+        // Send OTP via Fast2SMS (primary)
         try {
             await sendOtp(phoneNumber, otp);
         } catch (e) {
             console.error('Failed to send login OTP via Fast2SMS:', e);
             // Do not block login OTP issuance; client can show generic error if needed
+        }
+
+        // Also send OTP to driver's email as backup if available
+        if (user.email) {
+            try {
+                await sendDriverOtpEmail(user.email, otp, 'login');
+            } catch (e) {
+                console.error('Failed to send login OTP via email:', e);
+            }
         }
 
         return res.status(200).json({

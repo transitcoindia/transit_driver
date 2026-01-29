@@ -85,13 +85,21 @@ const register = async (req, res, next) => {
                     expiresAt
                 }
             });
-            // Send OTP via Fast2SMS
+            // Send OTP via Fast2SMS (primary)
             try {
                 await (0, otpService_1.sendOtp)(user.phoneNumber, otp);
             }
             catch (e) {
                 console.error('Failed to send registration OTP via Fast2SMS:', e);
-                // We still allow the flow to continue so user can retry or use fallback
+            }
+        }
+        // Also send OTP to driver's email as backup if available
+        if (user.email) {
+            try {
+                await (0, emailService_1.sendDriverOtpEmail)(user.email, otp, 'registration');
+            }
+            catch (e) {
+                console.error('Failed to send registration OTP via email:', e);
             }
         }
         return res.status(201).json({
@@ -332,13 +340,22 @@ const loginWithPhoneNumber = async (req, res, next) => {
                 expiresAt
             }
         });
-        // Send OTP via Fast2SMS (non-blocking for login UX)
+        // Send OTP via Fast2SMS (primary)
         try {
             await (0, otpService_1.sendOtp)(phoneNumber, otp);
         }
         catch (e) {
             console.error('Failed to send login OTP via Fast2SMS:', e);
             // Do not block login OTP issuance; client can show generic error if needed
+        }
+        // Also send OTP to driver's email as backup if available
+        if (user.email) {
+            try {
+                await (0, emailService_1.sendDriverOtpEmail)(user.email, otp, 'login');
+            }
+            catch (e) {
+                console.error('Failed to send login OTP via email:', e);
+            }
         }
         return res.status(200).json({
             success: true,
