@@ -45,7 +45,7 @@ import {
     activateSubscription,
     getCurrentSubscription,
 } from '../controllers/ride_controllers/subscription';
-import { updateDriverProfile } from '../controllers/auth_controllers/profile';
+import { updateDriverProfile, uploadDriverProfileImage } from '../controllers/auth_controllers/profile';
 import { getDocumentStatus, getVehicleImages, uploadDocuments, createOrUpdateVehicleInfo, uploadVehicleImages } from '../controllers/auth_controllers/documents';
 import { authenticate, authenticateAdmin } from '../middleware/authMiddle';
 import {
@@ -117,6 +117,21 @@ const vehicleImageUpload = multer({
     { name: 'exterior', maxCount: 10 }   // Exterior images
 ]);
 
+// Configure multer for driver profile image (single image)
+const profileImageUpload = multer({
+    storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB
+    },
+    fileFilter: (req: express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed for profile image'));
+        }
+    }
+}).single('profileImage');
+
 const router = express.Router();
 
 // Registration routes
@@ -135,6 +150,7 @@ router.post('/auth/google', (googleAuth as unknown) as RequestHandler);
 // Protected routes
 router.get('/profile', authenticate as RequestHandler, getUserDetails as RequestHandler);
 router.put('/profile', authenticate as RequestHandler, updateDriverProfile as RequestHandler);
+router.post('/profile/image', authenticate as RequestHandler, profileImageUpload as any, uploadDriverProfileImage as RequestHandler);
 router.get('/documents/status', authenticate as RequestHandler, getDocumentStatus as RequestHandler);
 router.get('/documents/vehicleImages', authenticate as RequestHandler, getVehicleImages as RequestHandler);
 router.post('/documents/vehicleImages', authenticate as RequestHandler, vehicleImageUpload as any, uploadVehicleImages as RequestHandler);

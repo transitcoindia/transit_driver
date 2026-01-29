@@ -1,9 +1,11 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../../prismaClient";
 import AppError from "../../utils/AppError";
+import { uploadToSupabase } from "../../utils/supabaseUpload";
+import fs from "fs";
 
 /**
- * Update driver profile
+ * Update driver profile (basic fields)
  */
 export const updateDriverProfile = async (
   req: Request,
@@ -19,11 +21,17 @@ export const updateDriverProfile = async (
     }
     const driverId = req.driver.id as string;
 
-    const { name, phoneNumber, aadharNumber, panNumber, drivingExperience } = req.body;
+    const {
+      name,
+      phoneNumber,
+      aadharNumber,
+      panNumber,
+      drivingExperience,
+    } = req.body;
 
     // Build update data object
     const updateData: any = {};
-    
+
     if (name !== undefined) updateData.name = name;
     if (phoneNumber !== undefined) updateData.contactNumber = phoneNumber;
     if (aadharNumber !== undefined) updateData.aadharNumber = aadharNumber;
@@ -68,13 +76,90 @@ export const updateDriverProfile = async (
     });
   } catch (error: any) {
     console.error("Error updating driver profile:", error);
-    
+
     if (error.code === "P2002") {
-      return next(new AppError("Phone number, Aadhar, or PAN already exists", 400));
+      return next(
+        new AppError("Phone number, Aadhar, or PAN already exists", 400)
+      );
     }
-    
+
     return next(new AppError("Failed to update driver profile", 500));
   }
 };
 
+/**
+ * Upload / update driver profile image
+ * POST /api/driver/profile/image
+ * Body: multipart/form-data with field "profileImage"
+ */
+export const uploadDriverProfileImage = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    if (!req.driver?.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Driver not authenticated",
+      });
+    }
+    const driverId = req.driver.id as string;
+
+    const file = (req as any).file as Express.Multer.File | undefined;
+
+    if (!file) {
+      return res.status(400).json({
+        success: false,
+        message: "No profile image uploaded",
+      });
+    }
+
+    if (!file.path || !fs.existsSync(file.path)) {
+      return next(
+        new AppError(
+          `Uploaded file not found on disk: ${file.originalname}`,
+          500
+        )
+      );
+    }
+
+    // Upload to Supabase (driver-profile-images folder)
+    const imageUrl = await uploadToSupabase(file, "driver-profile-images");
+
+    // Ensure DriverDetails exists and update profileImage
+    const driverDetails = await prisma.driverDetails.upsert({
+      where: { driverId },
+      create: {
+        driverId,
+        // TEMP license number placeholder; real value will be set during document verification
+        licenseNumber: `TEMP-${driverId}`,
+        profileImage: imageUrl,
+      },
+      update: {
+        profileImage: imageUrl,
+      },
+      select: {
+        profileImage: true,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile image updated successfully",
+      data: {
+        profileImage: driverDetails.profileImage,
+      },
+    });
+  } catch (error: any) {
+    console.error("Error uploading driver profile image:", error);
+    return next(
+      new AppError(
+        "Failed to upload profile image: " +
+          (error instanceof Error ? error.message : "Unknown error"),
+        500
+      )
+    );
+  }
+};
 

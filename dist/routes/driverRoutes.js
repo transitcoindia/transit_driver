@@ -76,6 +76,21 @@ const vehicleImageUpload = (0, multer_1.default)({
     { name: 'interior', maxCount: 10 }, // Interior images
     { name: 'exterior', maxCount: 10 } // Exterior images
 ]);
+// Configure multer for driver profile image (single image)
+const profileImageUpload = (0, multer_1.default)({
+    storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB
+    },
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        }
+        else {
+            cb(new Error('Only image files are allowed for profile image'));
+        }
+    }
+}).single('profileImage');
 const router = express_1.default.Router();
 // Registration routes
 router.post('/register', authControllers_1.register);
@@ -90,6 +105,7 @@ router.post('/auth/google', authControllers_1.googleAuth);
 // Protected routes
 router.get('/profile', authMiddle_1.authenticate, authControllers_1.getUserDetails);
 router.put('/profile', authMiddle_1.authenticate, profile_1.updateDriverProfile);
+router.post('/profile/image', authMiddle_1.authenticate, profileImageUpload, profile_1.uploadDriverProfileImage);
 router.get('/documents/status', authMiddle_1.authenticate, documents_1.getDocumentStatus);
 router.get('/documents/vehicleImages', authMiddle_1.authenticate, documents_1.getVehicleImages);
 router.post('/documents/vehicleImages', authMiddle_1.authenticate, vehicleImageUpload, documents_1.uploadVehicleImages);
