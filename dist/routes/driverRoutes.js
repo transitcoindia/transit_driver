@@ -96,8 +96,9 @@ const router = express_1.default.Router();
 router.post('/register', authControllers_1.register);
 router.post('/verify-registration-otp', authControllers_1.verifyRegistrationOTP);
 router.get('/verify-email', authControllers_1.verifyDriverEmail);
-// Login routes
-router.post('/login/email', authControllers_1.loginWithEmail);
+// Login routes (email/phone + password, or phone + OTP)
+router.post('/login', authControllers_1.loginWithEmail); // identifier (email or phone) + password
+router.post('/login/email', authControllers_1.loginWithEmail); // same, for backward compatibility
 router.post('/login/phoneNumber', authControllers_1.loginWithPhoneNumber);
 router.post('/login/verify-otp', authControllers_1.verifyPhoneOTP);
 // OAuth routes

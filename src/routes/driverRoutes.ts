@@ -137,10 +137,12 @@ const router = express.Router();
 // Registration routes
 router.post('/register', register as RequestHandler);
 router.post('/verify-registration-otp', verifyRegistrationOTP as RequestHandler);
+router.post('/resend-registration-otp', resendRegistrationOtp as RequestHandler); // Resend OTP when expired or not received
 router.get('/verify-email', verifyDriverEmail);
 
-// Login routes
-router.post('/login/email', loginWithEmail as RequestHandler);
+// Login routes (email/phone + password, or phone + OTP)
+router.post('/login', loginWithEmail as RequestHandler); // identifier (email or phone) + password
+router.post('/login/email', loginWithEmail as RequestHandler); // same, for backward compatibility
 router.post('/login/phoneNumber', loginWithPhoneNumber as RequestHandler);
 router.post('/login/verify-otp', verifyPhoneOTP as RequestHandler);
 

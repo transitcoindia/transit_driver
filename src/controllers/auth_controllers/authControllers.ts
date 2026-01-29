@@ -77,12 +77,7 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
             },
         });
 
-        const verificationToken = generateToken(user.id);
-
-        // Send verification email (using user.email)
-        await sendDriverVerificationEmail(user.email, verificationToken);
-
-        // Generate and send OTP for phone verification (using user.phoneNumber)
+        // Generate and send OTP for phone & email verification
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
 
@@ -175,6 +170,62 @@ Prisma error meta: ${JSON.stringify(error.meta)}`;
     }
 };
 
+// Resend registration OTP (when OTP expired or user didn't receive it) – no auth
+export const resendRegistrationOtp = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { phoneNumber } = req.body;
+        if (!phoneNumber) {
+            return next(new AppError('Phone number is required', 400));
+        }
+
+        const user = await prisma.user.findFirst({
+            where: { phoneNumber, isDriver: true },
+            include: { driver: true },
+        });
+        if (!user || !user.driver) {
+            return res.status(401).json({
+                success: false,
+                message: 'No driver account found for this phone number',
+            });
+        }
+        if (user.phoneNumberVerified) {
+            return res.status(400).json({
+                success: false,
+                message: 'Phone number is already verified',
+            });
+        }
+
+        const otp = generateOTP();
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+        await prisma.otp.deleteMany({ where: { phoneNumber } });
+        await prisma.otp.create({
+            data: { phoneNumber, otp, expiresAt },
+        });
+
+        try {
+            await sendOtp(phoneNumber, otp);
+        } catch (e) {
+            console.error('Failed to send registration OTP via Fast2SMS:', e);
+        }
+        if (user.email) {
+            try {
+                await sendDriverOtpEmail(user.email, otp, 'registration');
+            } catch (e) {
+                console.error('Failed to send registration OTP via email:', e);
+            }
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'OTP sent again to your phone and email',
+        });
+    } catch (error) {
+        console.error('Error resending registration OTP:', error);
+        return next(new AppError('Failed to resend OTP', 500));
+    }
+};
+
 // Verify phone number during registration
 export const verifyRegistrationOTP = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -217,10 +268,10 @@ export const verifyRegistrationOTP = async (req: Request, res: Response, next: N
 
         const driver = user.driver;
 
-        // Update User's phone verification status (email/phone verification is in User table)
+        // Update User's phone & email verification status (OTP verifies both)
         await prisma.user.update({
             where: { id: user.id },
-            data: { phoneNumberVerified: true }
+            data: { phoneNumberVerified: true, emailVerified: true }
         });
 
         // Delete used OTP
@@ -282,14 +333,22 @@ export const verifyDriverEmail = async (req: Request, res: Response) => {
     }
 };
 
-// Email login
+// Login with email or phone + password (single endpoint for password login)
 export const loginWithEmail = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { email, password } = req.body;
+        const { identifier, password } = req.body;
+        if (!identifier || !password) {
+            return res.status(400).json({
+                success: false,
+                message: 'Identifier (email or phone) and password are required'
+            });
+        }
 
-        // Find user by email (password is stored in User table)
-        const user = await prisma.user.findUnique({
-            where: { email },
+        const isEmail = identifier.includes('@');
+        const user = await prisma.user.findFirst({
+            where: isEmail
+                ? { email: loginId, isDriver: true }
+                : { phoneNumber: loginId, isDriver: true },
             include: {
                 driver: {
                     include: {
@@ -303,23 +362,29 @@ export const loginWithEmail = async (req: Request, res: Response, next: NextFunc
         if (!user || !user.isDriver || !user.driver) {
             return res.status(401).json({
                 success: false,
-                message: 'Invalid email or password'
+                message: 'Invalid email/phone or password'
             });
         }
 
         const driver = user.driver;
 
-        if(user.emailVerified === false) {
+        if (isEmail && !user.emailVerified) {
             return res.status(401).json({
                 success: false,
                 message: 'Please verify your email'
-            })
+            });
+        }
+        if (!isEmail && !user.phoneNumberVerified) {
+            return res.status(401).json({
+                success: false,
+                message: 'Please verify your phone number'
+            });
         }
 
         // Verify password from User table
         const isValidPassword = await bcrypt.compare(password, user.password);
         if (!isValidPassword) {
-            return next(new AppError('Invalid email or password', 401));
+            return next(new AppError('Invalid email/phone or password', 401));
         }
 
         // Generate access token using driver.id (keeping existing flow)

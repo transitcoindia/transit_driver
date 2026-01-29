@@ -70,10 +70,7 @@ const register = async (req, res, next) => {
                 user: true, // Include user data for response
             },
         });
-        const verificationToken = (0, jwtService_1.generateToken)(user.id);
-        // Send verification email (using user.email)
-        await (0, emailService_1.sendDriverVerificationEmail)(user.email, verificationToken);
-        // Generate and send OTP for phone verification (using user.phoneNumber)
+        // Generate and send OTP for phone & email verification
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
         if (user.phoneNumber) {
@@ -196,10 +193,10 @@ const verifyRegistrationOTP = async (req, res, next) => {
             return next(new AppError_1.default('Driver not found', 404));
         }
         const driver = user.driver;
-        // Update User's phone verification status (email/phone verification is in User table)
+        // Update User's phone & email verification status (OTP verifies both)
         await prismaClient_1.prisma.user.update({
             where: { id: user.id },
-            data: { phoneNumberVerified: true }
+            data: { phoneNumberVerified: true, emailVerified: true }
         });
         // Delete used OTP
         await prismaClient_1.prisma.otp.delete({
@@ -255,13 +252,21 @@ const verifyDriverEmail = async (req, res) => {
     }
 };
 exports.verifyDriverEmail = verifyDriverEmail;
-// Email login
+// Login with email or phone + password (single endpoint for password login)
 const loginWithEmail = async (req, res, next) => {
     try {
-        const { email, password } = req.body;
-        // Find user by email (password is stored in User table)
-        const user = await prismaClient_1.prisma.user.findUnique({
-            where: { email },
+        const { identifier, password } = req.body;
+        if (!identifier || !password) {
+            return res.status(400).json({
+                success: false,
+                message: 'Identifier (email or phone) and password are required'
+            });
+        }
+        const isEmail = identifier.includes('@');
+        const user = await prismaClient_1.prisma.user.findFirst({
+            where: isEmail
+                ? { email: loginId, isDriver: true }
+                : { phoneNumber: loginId, isDriver: true },
             include: {
                 driver: {
                     include: {
@@ -274,20 +279,26 @@ const loginWithEmail = async (req, res, next) => {
         if (!user || !user.isDriver || !user.driver) {
             return res.status(401).json({
                 success: false,
-                message: 'Invalid email or password'
+                message: 'Invalid email/phone or password'
             });
         }
         const driver = user.driver;
-        if (user.emailVerified === false) {
+        if (isEmail && !user.emailVerified) {
             return res.status(401).json({
                 success: false,
                 message: 'Please verify your email'
             });
         }
+        if (!isEmail && !user.phoneNumberVerified) {
+            return res.status(401).json({
+                success: false,
+                message: 'Please verify your phone number'
+            });
+        }
         // Verify password from User table
         const isValidPassword = await bcrypt_1.default.compare(password, user.password);
         if (!isValidPassword) {
-            return next(new AppError_1.default('Invalid email or password', 401));
+            return next(new AppError_1.default('Invalid email/phone or password', 401));
         }
         // Generate access token using driver.id (keeping existing flow)
         const accessToken = (0, jwtService_1.generateAccessToken)(driver.id);
