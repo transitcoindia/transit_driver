@@ -5,9 +5,9 @@ import path from 'path';
 import { 
     register, 
     verifyDriverEmail, 
-    loginWithEmail,  
+    requestLoginOtp,
+    verifyLoginOtp,
     loginWithPhoneNumber,
-    verifyPhoneOTP,
     verifyRegistrationOTP,
     resendRegistrationOtp,
     getUserDetails,
@@ -141,11 +141,10 @@ router.post('/verify-registration-otp', verifyRegistrationOTP as RequestHandler)
 router.post('/resend-registration-otp', resendRegistrationOtp as RequestHandler); // Resend OTP when expired or not received
 router.get('/verify-email', verifyDriverEmail);
 
-// Login routes (email/phone + password, or phone + OTP)
-router.post('/login', loginWithEmail as RequestHandler); // identifier (email or phone) + password
-router.post('/login/email', loginWithEmail as RequestHandler); // same, for backward compatibility
-router.post('/login/phoneNumber', loginWithPhoneNumber as RequestHandler);
-router.post('/login/verify-otp', verifyPhoneOTP as RequestHandler);
+// Login is OTP-only (no password). Request OTP by email or phone, then verify.
+router.post('/login/request-otp', requestLoginOtp as RequestHandler);
+router.post('/login/verify-otp', verifyLoginOtp as RequestHandler);
+router.post('/login/phoneNumber', loginWithPhoneNumber as RequestHandler); // backward compat: same as request-otp with phoneNumber
 
 // OAuth routes
 router.post('/auth/google', (googleAuth as unknown) as RequestHandler);
