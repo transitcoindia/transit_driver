@@ -190,7 +190,17 @@ export const toggleDriverAvailability = async (
       }
     }
 
-    // Driver's vehicle is always active; pick first active vehicle for this driver
+    // When driver goes online: set all their vehicles to isActive and isAvailable.
+    // When driver goes offline: set vehicles to isAvailable false.
+    await prisma.vehicle.updateMany({
+      where: { driverId },
+      data: {
+        isActive: true,
+        isAvailable: isAvailable,
+      },
+    });
+
+    // Pick first active vehicle for DriverLocation
     const activeVehicle = await prisma.vehicle.findFirst({
       where: { driverId, isActive: true },
       select: { id: true },
