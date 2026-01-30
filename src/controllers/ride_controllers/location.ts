@@ -78,6 +78,14 @@ export const updateDriverLocation = async (
       });
     }
 
+    // Find currently active vehicle for this driver (if any)
+    // Driver's vehicle is always active; pick first active vehicle for this driver
+    const activeVehicle = await prisma.vehicle.findFirst({
+      where: { driverId, isActive: true },
+      select: { id: true },
+    });
+    const activeVehicleId = activeVehicle?.id || null;
+
     const driver = await prisma.driver.update({
       where: { id: driverId },
       data: {
@@ -97,6 +105,7 @@ export const updateDriverLocation = async (
       where: { driverId },
       create: {
         driverId,
+        vehicleId: activeVehicleId || undefined,
         latitude,
         longitude,
         isOnline: true,
@@ -108,6 +117,7 @@ export const updateDriverLocation = async (
         longitude,
         timestamp: nowDate,
         lastUpdatedAt: nowDate,
+        ...(activeVehicleId ? { vehicleId: activeVehicleId } : {}),
       },
     });
 
@@ -180,6 +190,13 @@ export const toggleDriverAvailability = async (
       }
     }
 
+    // Driver's vehicle is always active; pick first active vehicle for this driver
+    const activeVehicle = await prisma.vehicle.findFirst({
+      where: { driverId, isActive: true },
+      select: { id: true },
+    });
+    const activeVehicleId = activeVehicle?.id || null;
+
     // Update DriverDetails.isAvailable
     const driverDetails = await prisma.driverDetails.upsert({
       where: { driverId },
@@ -215,6 +232,7 @@ export const toggleDriverAvailability = async (
       where: { driverId },
       create: {
         driverId,
+        vehicleId: activeVehicleId || undefined,
         latitude: 0, // Will be updated when location is set
         longitude: 0,
         isOnline: isAvailable,
@@ -223,6 +241,7 @@ export const toggleDriverAvailability = async (
       update: {
         isOnline: isAvailable,
         isAvailable: isAvailable,
+        ...(activeVehicleId ? { vehicleId: activeVehicleId } : {}),
       },
     });
 
@@ -342,6 +361,13 @@ export const driverHeartbeat = async (
     // 2) Optionally persist to DB (for testing or when rider matching still uses DB). Disable in production with DRIVER_LOCATION_PERSIST_TO_DB=false.
     if (shouldPersistLocationToDb()) {
       try {
+        // Driver's vehicle is always active; pick first active vehicle for this driver
+        const activeVehicle = await prisma.vehicle.findFirst({
+          where: { driverId, isActive: true },
+          select: { id: true },
+        });
+        const activeVehicleId = activeVehicle?.id || null;
+
         await prisma.driver.update({
           where: { id: driverId },
           data: {
@@ -354,6 +380,7 @@ export const driverHeartbeat = async (
           where: { driverId },
           create: {
             driverId,
+            vehicleId: activeVehicleId || undefined,
             latitude,
             longitude,
             isOnline: true,
@@ -365,6 +392,7 @@ export const driverHeartbeat = async (
             longitude,
             timestamp: nowDate,
             lastUpdatedAt: nowDate,
+            ...(activeVehicleId ? { vehicleId: activeVehicleId } : {}),
           },
         });
       } catch (dbErr) {
