@@ -4,14 +4,20 @@ import AppError from "../../utils/AppError";
 import redis from "../../redis";
 
 const DRIVER_AVAILABILITY_TTL_SECONDS = 60; // Heartbeat-based availability window
+const DRIVER_LOCATION_REDIS_TTL_SECONDS = 120; // Last location key TTL (slightly longer than heartbeat interval)
 
 const getDriverAvailabilityKey = (driverId: string) =>
   `driver:${driverId}:availability`;
+const getDriverLocationKey = (driverId: string) => `driver:location:${driverId}`;
+
+/** When true (testing/default), heartbeat also writes location to DB. When false (production), Redis only. */
+const shouldPersistLocationToDb = (): boolean =>
+  process.env.DRIVER_LOCATION_PERSIST_TO_DB !== "false";
 
 /**
- * Update driver's current location
- * This syncs the location to the database (Driver.currentLat/currentLng)
- * in addition to any Redis caching that might be happening
+ * Update driver's current location (legacy/one-off).
+ * In production (DRIVER_LOCATION_PERSIST_TO_DB=false) only Redis is updated.
+ * For live location, use heartbeat (availability/heartbeat) with lat/lng.
  */
 export const updateDriverLocation = async (
   req: Request,
@@ -26,10 +32,8 @@ export const updateDriverLocation = async (
       });
     }
     const driverId = req.driver.id as string;
-
     const { latitude, longitude } = req.body;
 
-    // Validate inputs
     if (
       typeof latitude !== "number" ||
       typeof longitude !== "number" ||
@@ -44,13 +48,42 @@ export const updateDriverLocation = async (
       });
     }
 
-    // Update driver location in database
+    const nowDate = new Date();
+
+    // Always update Redis so last location is available (gateway, matching).
+    try {
+      await redis.set(
+        getDriverLocationKey(driverId),
+        JSON.stringify({ latitude, longitude, updatedAt: Date.now() }),
+        "EX",
+        DRIVER_LOCATION_REDIS_TTL_SECONDS
+      );
+    } catch (redisErr) {
+      console.warn("updateDriverLocation Redis failed:", redisErr);
+      return next(new AppError("Failed to update location (Redis)", 500));
+    }
+
+    // DB only when persist-to-DB is enabled (e.g. testing).
+    if (!shouldPersistLocationToDb()) {
+      return res.status(200).json({
+        success: true,
+        message: "Location updated in Redis (production: DB not persisted)",
+        data: {
+          driverId,
+          latitude,
+          longitude,
+          updatedAt: nowDate,
+          persistedToDb: false,
+        },
+      });
+    }
+
     const driver = await prisma.driver.update({
       where: { id: driverId },
       data: {
         currentLat: latitude,
         currentLng: longitude,
-        updatedAt: new Date(),
+        updatedAt: nowDate,
       },
       select: {
         id: true,
@@ -60,7 +93,6 @@ export const updateDriverLocation = async (
       },
     });
 
-    // Also update DriverLocation table if it exists
     await prisma.driverLocation.upsert({
       where: { driverId },
       create: {
@@ -74,8 +106,8 @@ export const updateDriverLocation = async (
       update: {
         latitude,
         longitude,
-        timestamp: new Date(),
-        lastUpdatedAt: new Date(),
+        timestamp: nowDate,
+        lastUpdatedAt: nowDate,
       },
     });
 
@@ -87,6 +119,7 @@ export const updateDriverLocation = async (
         latitude: driver.currentLat,
         longitude: driver.currentLng,
         updatedAt: driver.updatedAt,
+        persistedToDb: true,
       },
     });
   } catch (error: any) {
@@ -237,8 +270,8 @@ export const toggleDriverAvailability = async (
 };
 
 /**
- * Heartbeat endpoint to keep driver ONLINE using Redis TTL
- * This should be called by the driver app every 15–30 seconds.
+ * Heartbeat endpoint to keep driver ONLINE using Redis TTL and location live.
+ * Call every 15–30 seconds with current latitude/longitude (required for ride-hailing).
  */
 export const driverHeartbeat = async (
   req: Request,
@@ -253,10 +286,95 @@ export const driverHeartbeat = async (
       });
     }
     const driverId = req.driver.id as string;
+    const { latitude, longitude } = req.body || {};
+
+    const hasValidLocation =
+      typeof latitude === "number" &&
+      typeof longitude === "number" &&
+      latitude >= -90 &&
+      latitude <= 90 &&
+      longitude >= -180 &&
+      longitude <= 180;
+    if (!hasValidLocation) {
+      return res.status(400).json({
+        success: false,
+        error: "latitude and longitude are required (numbers: lat -90..90, lng -180..180)",
+      });
+    }
 
     const availabilityKey = getDriverAvailabilityKey(driverId);
+    const locationKey = getDriverLocationKey(driverId);
     const now = Date.now();
     const nowDate = new Date(now);
+
+    // 1) Always update Redis first – single source of truth for live location (production).
+    //    When driver moves or stays, next heartbeat overwrites; if internet drops, last location stays until TTL.
+    try {
+      const availabilityPayload = {
+        driverId,
+        status: "ONLINE",
+        lastPing: now,
+        updatedAt: now,
+        latitude,
+        longitude,
+      };
+      await redis.set(
+        availabilityKey,
+        JSON.stringify(availabilityPayload),
+        "EX",
+        DRIVER_AVAILABILITY_TTL_SECONDS
+      );
+      const locationPayload = { latitude, longitude, updatedAt: now };
+      await redis.set(
+        locationKey,
+        JSON.stringify(locationPayload),
+        "EX",
+        DRIVER_LOCATION_REDIS_TTL_SECONDS
+      );
+    } catch (redisErr) {
+      console.error(
+        "Driver heartbeat Redis update failed:",
+        redisErr instanceof Error ? redisErr.message : redisErr
+      );
+      return next(new AppError("Failed to update location (Redis)", 500));
+    }
+
+    // 2) Optionally persist to DB (for testing or when rider matching still uses DB). Disable in production with DRIVER_LOCATION_PERSIST_TO_DB=false.
+    if (shouldPersistLocationToDb()) {
+      try {
+        await prisma.driver.update({
+          where: { id: driverId },
+          data: {
+            currentLat: latitude,
+            currentLng: longitude,
+            updatedAt: nowDate,
+          },
+        });
+        await prisma.driverLocation.upsert({
+          where: { driverId },
+          create: {
+            driverId,
+            latitude,
+            longitude,
+            isOnline: true,
+            isAvailable: true,
+            isInTrip: false,
+          },
+          update: {
+            latitude,
+            longitude,
+            timestamp: nowDate,
+            lastUpdatedAt: nowDate,
+          },
+        });
+      } catch (dbErr) {
+        console.error(
+          "Driver heartbeat DB location update failed:",
+          dbErr instanceof Error ? dbErr.message : dbErr
+        );
+        return next(new AppError("Failed to update location (DB)", 500));
+      }
+    }
 
     // Track online time against active subscription (if any)
     let subscriptionJustExpired = false;
@@ -354,27 +472,6 @@ export const driverHeartbeat = async (
       // Do not block the heartbeat on DB tracking issues
     }
 
-    // Always refresh Redis-based availability TTL
-    try {
-      await redis.set(
-        availabilityKey,
-        JSON.stringify({
-          driverId,
-          status: "ONLINE",
-          lastPing: now,
-          updatedAt: now,
-        }),
-        "EX",
-        DRIVER_AVAILABILITY_TTL_SECONDS
-      );
-    } catch (redisError) {
-      console.warn(
-        "Driver heartbeat Redis update failed:",
-        redisError instanceof Error ? redisError.message : redisError
-      );
-      // Still return success so that client isn't blocked by Redis issues
-    }
-
     return res.status(200).json({
       success: true,
       message: "Heartbeat received",
@@ -382,6 +479,9 @@ export const driverHeartbeat = async (
         driverId,
         lastPing: now,
         ttlSeconds: DRIVER_AVAILABILITY_TTL_SECONDS,
+        locationUpdated: true,
+        locationInRedis: true,
+        locationPersistedToDb: shouldPersistLocationToDb(),
         subscription: {
           justExpired: subscriptionJustExpired,
           remainingMinutes: remainingMinutesAfter ?? null,

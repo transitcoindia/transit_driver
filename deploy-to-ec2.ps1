@@ -99,7 +99,7 @@ $deployCommands += @(
 if (-not $SkipSchema) {
     $deployCommands += @(
         "echo '[INFO] Checking for schema changes...'",
-        "if [ -f push-schema-ec2.sh ]; then ./push-schema-ec2.sh; else echo '[WARN] Schema script not found, skipping'; fi"
+        "if [ -f push-schema-ec2.sh ]; then bash push-schema-ec2.sh; else echo '[WARN] Schema script not found, skipping'; fi"
     )
 }
 
