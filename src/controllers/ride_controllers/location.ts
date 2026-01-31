@@ -177,6 +177,18 @@ export const toggleDriverAvailability = async (
       });
     }
 
+    // Driver must be verified (approved) by admin before going online
+    const driver = await prisma.driver.findUnique({
+      where: { id: driverId },
+      select: { approvalStatus: true },
+    });
+    if (!driver || driver.approvalStatus !== "APPROVED") {
+      return res.status(403).json({
+        success: false,
+        error: "You must be verified by admin before you can go online.",
+      });
+    }
+
     // Enforce active subscription and daily allowance (continuous from first online today) when going ONLINE
     if (isAvailable) {
       const now = new Date();

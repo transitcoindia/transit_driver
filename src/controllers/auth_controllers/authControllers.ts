@@ -696,6 +696,7 @@ export const getUserDetails = async (req: Request, res: Response, next: NextFunc
                 phoneNumber: driver.user.phoneNumber, // From User table
                 emailVerified: driver.user.emailVerified, // From User table
                 phoneNumberVerified: driver.user.phoneNumberVerified, // From User table
+                approvalStatus: driver.approvalStatus, // PENDING, APPROVED, REJECTED, SUSPENDED
                 driverDetails: driver.driverDetails
             }
         });

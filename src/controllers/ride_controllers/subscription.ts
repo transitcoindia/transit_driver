@@ -125,6 +125,18 @@ export const activateSubscription = async (
 
     const driverId = req.driver.id as string;
 
+    // Driver must be verified (approved) by admin before buying a subscription
+    const driverRecord = await prisma.driver.findUnique({
+      where: { id: driverId },
+      select: { approvalStatus: true },
+    });
+    if (!driverRecord || driverRecord.approvalStatus !== "APPROVED") {
+      return res.status(403).json({
+        success: false,
+        error: "You must be verified by admin before you can buy a subscription.",
+      });
+    }
+
     // Validate request body
     const validatedData = subscriptionActivateSchema.parse(req.body);
     const { planId, amount, paymentMode, transactionId, durationDays, includedMinutes } = validatedData;
