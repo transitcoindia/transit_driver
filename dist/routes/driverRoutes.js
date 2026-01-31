@@ -97,16 +97,17 @@ router.post('/register', authControllers_1.register);
 router.post('/verify-registration-otp', authControllers_1.verifyRegistrationOTP);
 router.post('/resend-registration-otp', authControllers_1.resendRegistrationOtp); // Resend OTP when expired or not received
 router.get('/verify-email', authControllers_1.verifyDriverEmail);
-// Login routes (email/phone + password, or phone + OTP)
-router.post('/login', authControllers_1.loginWithEmail); // identifier (email or phone) + password
-router.post('/login/email', authControllers_1.loginWithEmail); // same, for backward compatibility
-router.post('/login/phoneNumber', authControllers_1.loginWithPhoneNumber);
-router.post('/login/verify-otp', authControllers_1.verifyPhoneOTP);
+// Login is OTP-only (no password). Request OTP by email or phone, then verify.
+router.post('/login/request-otp', authControllers_1.requestLoginOtp);
+router.post('/login/verify-otp', authControllers_1.verifyLoginOtp);
+router.post('/login/phoneNumber', authControllers_1.loginWithPhoneNumber); // backward compat: same as request-otp with phoneNumber
 // OAuth routes
 router.post('/auth/google', authControllers_1.googleAuth);
 // Protected routes
 router.get('/profile', authMiddle_1.authenticate, authControllers_1.getUserDetails);
 router.put('/profile', authMiddle_1.authenticate, profile_1.updateDriverProfile);
+router.post('/profile/request-phone-otp', authMiddle_1.authenticate, authControllers_1.requestProfilePhoneOtp);
+router.post('/profile/verify-phone-otp', authMiddle_1.authenticate, authControllers_1.verifyProfilePhoneOtp);
 router.post('/profile/image', authMiddle_1.authenticate, profileImageUpload, profile_1.uploadDriverProfileImage);
 router.get('/documents/status', authMiddle_1.authenticate, documents_1.getDocumentStatus);
 router.get('/documents/vehicleImages', authMiddle_1.authenticate, documents_1.getVehicleImages);
@@ -122,6 +123,7 @@ router.get('/rides/:rideId', authMiddle_1.authenticate, rideHistory_1.getDriverR
 router.post('/rides/:rideId/rate-rider', authMiddle_1.authenticate, rating_1.rateRider);
 // Ride management routes
 router.post('/rides/:rideId/accept', authMiddle_1.authenticate, rideManagement_1.acceptRide);
+router.post('/rides/:rideId/arrived-at-pickup', authMiddle_1.authenticate, rideManagement_1.arrivedAtPickup);
 router.post('/rides/:rideId/start', authMiddle_1.authenticate, rideManagement_1.startRide);
 router.post('/rides/:rideId/complete', authMiddle_1.authenticate, rideManagement_1.completeRide);
 router.post('/rides/:rideId/cancel', authMiddle_1.authenticate, rideManagement_1.cancelRide);

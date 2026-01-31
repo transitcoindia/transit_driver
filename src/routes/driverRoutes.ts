@@ -13,7 +13,9 @@ import {
     getUserDetails,
     googleAuth,
     sendResetEmailController,
-    resetPassword
+    resetPassword,
+    requestProfilePhoneOtp,
+    verifyProfilePhoneOtp,
 } from '../controllers/auth_controllers/authControllers';
 import {
     getDriverRideHistory,
@@ -21,6 +23,7 @@ import {
 } from '../controllers/ride_controllers/rideHistory';
 import {
     acceptRide,
+    arrivedAtPickup,
     startRide,
     completeRide,
     cancelRide,
@@ -152,6 +155,8 @@ router.post('/auth/google', (googleAuth as unknown) as RequestHandler);
 // Protected routes
 router.get('/profile', authenticate as RequestHandler, getUserDetails as RequestHandler);
 router.put('/profile', authenticate as RequestHandler, updateDriverProfile as RequestHandler);
+router.post('/profile/request-phone-otp', authenticate as RequestHandler, requestProfilePhoneOtp as RequestHandler);
+router.post('/profile/verify-phone-otp', authenticate as RequestHandler, verifyProfilePhoneOtp as RequestHandler);
 router.post('/profile/image', authenticate as RequestHandler, profileImageUpload as any, uploadDriverProfileImage as RequestHandler);
 router.get('/documents/status', authenticate as RequestHandler, getDocumentStatus as RequestHandler);
 router.get('/documents/vehicleImages', authenticate as RequestHandler, getVehicleImages as RequestHandler);
@@ -170,6 +175,7 @@ router.post('/rides/:rideId/rate-rider', authenticate as RequestHandler, rateRid
 
 // Ride management routes
 router.post('/rides/:rideId/accept', authenticate as RequestHandler, acceptRide as RequestHandler);
+router.post('/rides/:rideId/arrived-at-pickup', authenticate as RequestHandler, arrivedAtPickup as RequestHandler);
 router.post('/rides/:rideId/start', authenticate as RequestHandler, startRide as RequestHandler);
 router.post('/rides/:rideId/complete', authenticate as RequestHandler, completeRide as RequestHandler);
 router.post('/rides/:rideId/cancel', authenticate as RequestHandler, cancelRide as RequestHandler);

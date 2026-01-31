@@ -15,33 +15,30 @@ interface SubscriptionPlan {
   includedMinutes: number | null; // null = unlimited minutes (date-based only)
 }
 
-// Subscription plan catalogue based on your matrix
+// Subscription plan catalogue based on your matrix (12h per day; no 8h plans)
 const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   // Bike plans
   { id: "bike_daily_4h", vehicleType: "BIKE", label: "Bike Daily 4h", price: 20, durationDays: 1, includedMinutes: 4 * 60 },
-  { id: "bike_daily_8h", vehicleType: "BIKE", label: "Bike Daily 8h", price: 40, durationDays: 1, includedMinutes: 8 * 60 },
   { id: "bike_daily_12h", vehicleType: "BIKE", label: "Bike Daily 12h", price: 60, durationDays: 1, includedMinutes: 12 * 60 },
-  { id: "bike_weekly_5d", vehicleType: "BIKE", label: "Bike Weekly 5x8h", price: 180, durationDays: 5, includedMinutes: 5 * 8 * 60 },
-  { id: "bike_weekly_7d", vehicleType: "BIKE", label: "Bike Weekly 7x8h", price: 250, durationDays: 7, includedMinutes: 7 * 8 * 60 },
-  { id: "bike_monthly_8h", vehicleType: "BIKE", label: "Bike Monthly 30x8h", price: 899, durationDays: 30, includedMinutes: 30 * 8 * 60 },
+  { id: "bike_weekly_5d", vehicleType: "BIKE", label: "Bike Weekly 5x12h", price: 180, durationDays: 5, includedMinutes: 5 * 12 * 60 },
+  { id: "bike_weekly_7d", vehicleType: "BIKE", label: "Bike Weekly 7x12h", price: 250, durationDays: 7, includedMinutes: 7 * 12 * 60 },
+  { id: "bike_monthly_12h", vehicleType: "BIKE", label: "Bike Monthly 30x12h", price: 899, durationDays: 30, includedMinutes: 30 * 12 * 60 },
   { id: "bike_monthly_unlimited", vehicleType: "BIKE", label: "Bike Monthly Unlimited", price: 1199, durationDays: 30, includedMinutes: null },
 
   // Auto plans
   { id: "auto_daily_4h", vehicleType: "AUTO", label: "Auto Daily 4h", price: 25, durationDays: 1, includedMinutes: 4 * 60 },
-  { id: "auto_daily_8h", vehicleType: "AUTO", label: "Auto Daily 8h", price: 50, durationDays: 1, includedMinutes: 8 * 60 },
   { id: "auto_daily_12h", vehicleType: "AUTO", label: "Auto Daily 12h", price: 70, durationDays: 1, includedMinutes: 12 * 60 },
-  { id: "auto_weekly_5d", vehicleType: "AUTO", label: "Auto Weekly 5x8h", price: 220, durationDays: 5, includedMinutes: 5 * 8 * 60 },
-  { id: "auto_weekly_7d", vehicleType: "AUTO", label: "Auto Weekly 7x8h", price: 300, durationDays: 7, includedMinutes: 7 * 8 * 60 },
-  { id: "auto_monthly_8h", vehicleType: "AUTO", label: "Auto Monthly 30x8h", price: 999, durationDays: 30, includedMinutes: 30 * 8 * 60 },
+  { id: "auto_weekly_5d", vehicleType: "AUTO", label: "Auto Weekly 5x12h", price: 220, durationDays: 5, includedMinutes: 5 * 12 * 60 },
+  { id: "auto_weekly_7d", vehicleType: "AUTO", label: "Auto Weekly 7x12h", price: 300, durationDays: 7, includedMinutes: 7 * 12 * 60 },
+  { id: "auto_monthly_12h", vehicleType: "AUTO", label: "Auto Monthly 30x12h", price: 999, durationDays: 30, includedMinutes: 30 * 12 * 60 },
   { id: "auto_monthly_unlimited", vehicleType: "AUTO", label: "Auto Monthly Unlimited", price: 1399, durationDays: 30, includedMinutes: null },
 
   // Car plans
   { id: "car_daily_4h", vehicleType: "CAR", label: "Car Daily 4h", price: 30, durationDays: 1, includedMinutes: 4 * 60 },
-  { id: "car_daily_8h", vehicleType: "CAR", label: "Car Daily 8h", price: 60, durationDays: 1, includedMinutes: 8 * 60 },
   { id: "car_daily_12h", vehicleType: "CAR", label: "Car Daily 12h", price: 90, durationDays: 1, includedMinutes: 12 * 60 },
-  { id: "car_weekly_5d", vehicleType: "CAR", label: "Car Weekly 5x8h", price: 280, durationDays: 5, includedMinutes: 5 * 8 * 60 },
-  { id: "car_weekly_7d", vehicleType: "CAR", label: "Car Weekly 7x8h", price: 350, durationDays: 7, includedMinutes: 7 * 8 * 60 },
-  { id: "car_monthly_8h", vehicleType: "CAR", label: "Car Monthly 30x8h", price: 1299, durationDays: 30, includedMinutes: 30 * 8 * 60 },
+  { id: "car_weekly_5d", vehicleType: "CAR", label: "Car Weekly 5x12h", price: 280, durationDays: 5, includedMinutes: 5 * 12 * 60 },
+  { id: "car_weekly_7d", vehicleType: "CAR", label: "Car Weekly 7x12h", price: 350, durationDays: 7, includedMinutes: 7 * 12 * 60 },
+  { id: "car_monthly_12h", vehicleType: "CAR", label: "Car Monthly 30x12h", price: 1299, durationDays: 30, includedMinutes: 30 * 12 * 60 },
   { id: "car_monthly_unlimited", vehicleType: "CAR", label: "Car Monthly Unlimited", price: 1699, durationDays: 30, includedMinutes: null },
 ];
 
@@ -178,6 +175,15 @@ export const activateSubscription = async (
         },
       });
 
+      // Per-day allowance: fixed window (midnight–midnight), continuous from first online that day.
+      // Daily plan: dailyAllowanceMinutes = includedMinutes. Multi-day: includedMinutes / durationDays. Unlimited: null.
+      const dailyAllowanceMinutes =
+        effectiveIncludedMinutes != null && effectiveDurationDays != null
+          ? effectiveDurationDays === 1
+            ? effectiveIncludedMinutes
+            : Math.floor(effectiveIncludedMinutes / effectiveDurationDays)
+          : null;
+
       // Create new subscription
       const subscription = await tx.driverSubscription.create({
         data: {
@@ -189,9 +195,8 @@ export const activateSubscription = async (
           paymentId: payment.id,
           paymentMode: paymentMode,
           autoRenewed: false,
-          // If includedMinutes is provided, start quota from that;
-          // otherwise remainingMinutes stays null and only expiry matters.
           remainingMinutes: effectiveIncludedMinutes ?? null,
+          dailyAllowanceMinutes,
         },
       });
 
@@ -330,6 +335,7 @@ export const getCurrentSubscription = async (
           paymentMode: subscription.paymentMode,
           autoRenewed: subscription.autoRenewed,
           remainingMinutes: subscription.remainingMinutes,
+          dailyAllowanceMinutes: subscription.dailyAllowanceMinutes,
         },
       },
     });

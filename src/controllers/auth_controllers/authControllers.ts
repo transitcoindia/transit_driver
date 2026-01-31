@@ -537,6 +537,109 @@ export const loginWithPhoneNumber = requestLoginOtp;
 /** @deprecated Use verifyLoginOtp with body { phoneNumber, otp } */
 export const verifyPhoneOTP = verifyLoginOtp;
 
+// Profile phone verification (authenticated): add/change phone for logged-in driver
+export const requestProfilePhoneOtp = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        if (!req.driver?.id) {
+            return res.status(401).json({ success: false, message: 'Unauthorized' });
+        }
+        const { phoneNumber } = req.body;
+        const raw = phoneNumber && String(phoneNumber).replace(/\D/g, '');
+        if (!raw || raw.length < 10) {
+            return res.status(400).json({
+                success: false,
+                message: 'Valid phone number is required',
+            });
+        }
+        const phone = raw.slice(-10);
+
+        const driver = await prisma.driver.findUnique({
+            where: { id: req.driver.id },
+            include: { user: true },
+        });
+        if (!driver?.user) {
+            return res.status(401).json({ success: false, message: 'Driver not found' });
+        }
+        const userId = driver.user.id;
+
+        const existingUser = await prisma.user.findFirst({
+            where: { phoneNumber: phone, id: { not: userId } },
+        });
+        if (existingUser) {
+            return res.status(400).json({
+                success: false,
+                message: 'This phone number is already linked to another account',
+            });
+        }
+
+        const otp = generateOTP();
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        await prisma.otp.deleteMany({ where: { phoneNumber: phone } });
+        await prisma.otp.create({ data: { phoneNumber: phone, otp, expiresAt } });
+        try {
+            await sendOtp(phone, otp);
+        } catch (e) {
+            console.error('Failed to send profile phone OTP:', e);
+        }
+        return res.status(200).json({
+            success: true,
+            message: 'OTP sent to your phone number',
+        });
+    } catch (error) {
+        return next(new AppError('An error occurred while sending OTP', 500));
+    }
+};
+
+export const verifyProfilePhoneOtp = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        if (!req.driver?.id) {
+            return res.status(401).json({ success: false, message: 'Unauthorized' });
+        }
+        const { phoneNumber, otp } = req.body;
+        const raw = phoneNumber && String(phoneNumber).replace(/\D/g, '');
+        if (!raw || raw.length < 10 || !otp || String(otp).trim().length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Phone number and OTP are required',
+            });
+        }
+        const phone = raw.slice(-10);
+
+        const otpRecord = await prisma.otp.findFirst({
+            where: { phoneNumber: phone, otp: String(otp).trim(), expiresAt: { gt: new Date() } },
+            orderBy: { createdAt: 'desc' },
+        });
+        if (!otpRecord) {
+            return res.status(401).json({ success: false, message: 'Invalid or expired OTP' });
+        }
+
+        const driver = await prisma.driver.findUnique({
+            where: { id: req.driver.id },
+            include: { user: true },
+        });
+        if (!driver?.user) {
+            return res.status(401).json({ success: false, message: 'Driver not found' });
+        }
+        const userId = driver.user.id;
+
+        await prisma.$transaction([
+            prisma.otp.delete({ where: { id: otpRecord.id } }),
+            prisma.user.update({
+                where: { id: userId },
+                data: { phoneNumber: phone, phoneNumberVerified: true },
+            }),
+        ]);
+
+        return res.status(200).json({
+            success: true,
+            message: 'Phone number verified and updated',
+            data: { phoneNumber: phone },
+        });
+    } catch (error) {
+        return next(new AppError('An error occurred during phone verification', 500));
+    }
+};
+
 //user details
 export const getUserDetails = async (req: Request, res: Response, next: NextFunction) => {
     try {

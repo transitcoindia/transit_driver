@@ -2,6 +2,26 @@ import { Request, Response, NextFunction } from "express";
 import { prisma } from "../../prismaClient";
 import AppError from "../../utils/AppError";
 
+/** Rate per minute: 6 AM–10 PM = ₹1, 10 PM–6 AM = ₹1.5 */
+function getWaitingRateForMinute(date: Date): number {
+  const h = date.getHours();
+  return h >= 22 || h < 6 ? 1.5 : 1;
+}
+
+/** Compute waiting time (minutes) and waiting charges (rupees). First 3 min free; then per-minute rate by clock (6–22 ₹1, 22–6 ₹1.5). */
+function computeWaitingCharges(arrivedAt: Date, startTime: Date): { waitingMinutes: number; waitingCharges: number } {
+  const waitingMs = startTime.getTime() - arrivedAt.getTime();
+  const waitingMinutes = Math.ceil(waitingMs / 60000);
+  if (waitingMinutes <= 3) return { waitingMinutes, waitingCharges: 0 };
+  const chargeableMinutes = waitingMinutes - 3;
+  let sum = 0;
+  for (let i = 0; i < chargeableMinutes; i++) {
+    const minuteTime = new Date(arrivedAt.getTime() + (3 + i) * 60000);
+    sum += getWaitingRateForMinute(minuteTime);
+  }
+  return { waitingMinutes, waitingCharges: sum };
+}
+
 // Extend Express Request type to include driver
 declare global {
   namespace Express {
@@ -107,6 +127,65 @@ export const acceptRide = async (
 };
 
 /**
+ * Driver arrived at pickup (button or auto when within 100m).
+ * POST /api/driver/rides/:rideId/arrived-at-pickup
+ */
+export const arrivedAtPickup = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    if (!req.driver?.id) {
+      return next(new AppError("Driver not authenticated", 401));
+    }
+    const driverId = req.driver.id as string;
+    const { rideId } = req.params;
+
+    if (!rideId) {
+      return next(new AppError("Ride ID is required", 400));
+    }
+
+    const ride = await prisma.ride.findUnique({
+      where: { id: rideId },
+      select: { id: true, driverId: true, status: true, driverArrivedAtPickupAt: true },
+    });
+
+    if (!ride) {
+      return next(new AppError("Ride not found", 404));
+    }
+    if (ride.driverId !== driverId) {
+      return next(new AppError("You are not assigned to this ride", 403));
+    }
+    if (ride.status !== "accepted" && ride.status !== "pending") {
+      return next(new AppError(`Cannot mark arrived for ride with status: ${ride.status}`, 400));
+    }
+    if (ride.driverArrivedAtPickupAt) {
+      return res.status(200).json({
+        success: true,
+        message: "Already marked as arrived at pickup",
+        data: { arrivedAt: ride.driverArrivedAtPickupAt },
+      });
+    }
+
+    const now = new Date();
+    await prisma.ride.update({
+      where: { id: rideId },
+      data: { driverArrivedAtPickupAt: now, updatedAt: now },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Arrived at pickup recorded",
+      data: { arrivedAt: now },
+    });
+  } catch (error: any) {
+    console.error("Error recording arrived at pickup:", error);
+    return next(new AppError("Failed to record arrived at pickup", 500));
+  }
+};
+
+/**
  * Start ride (requires OTP verification)
  * POST /api/driver/rides/:rideId/start
  * Body: { otp: string } - OTP provided by rider
@@ -184,8 +263,16 @@ export const startRide = async (
       );
     }
 
-    // OTP is valid - start the ride
+    // OTP is valid - start the ride; compute waiting time and charges (first 3 min free, then ₹1/min 6–22, ₹1.5/min 22–6)
     const startTime = new Date();
+    let waitingTimeMinutes: number | null = null;
+    let waitingChargesRupees: number | null = null;
+    if (ride.driverArrivedAtPickupAt) {
+      const { waitingMinutes, waitingCharges } = computeWaitingCharges(ride.driverArrivedAtPickupAt, startTime);
+      waitingTimeMinutes = waitingMinutes;
+      waitingChargesRupees = waitingCharges;
+    }
+
     const updatedRide = await prisma.ride.update({
       where: { id: rideId },
       data: {
@@ -193,6 +280,8 @@ export const startRide = async (
         startTime: startTime,
         rideOtp: null, // Clear OTP after successful verification
         updatedAt: startTime,
+        waitingTime: waitingTimeMinutes ?? undefined,
+        waitingCharges: waitingChargesRupees ?? undefined,
       },
       select: {
         id: true,
@@ -202,6 +291,8 @@ export const startRide = async (
         pickupAddress: true,
         dropAddress: true,
         estimatedFare: true,
+        waitingTime: true,
+        waitingCharges: true,
       },
     });
 
@@ -214,6 +305,12 @@ export const startRide = async (
         },
       });
     }
+
+    // Mark driver as in trip so DriverLocation.isInTrip stays in sync
+    await prisma.driverLocation.updateMany({
+      where: { driverId },
+      data: { isInTrip: true },
+    });
 
     return res.status(200).json({
       success: true,
@@ -344,6 +441,12 @@ export const completeRide = async (
       });
     }
 
+    // Mark driver as not in trip so DriverLocation.isInTrip stays in sync
+    await prisma.driverLocation.updateMany({
+      where: { driverId },
+      data: { isInTrip: false },
+    });
+
     return res.status(200).json({
       success: true,
       message: "Ride completed successfully",
@@ -438,6 +541,12 @@ export const cancelRide = async (
           },
         });
       }
+
+      // Mark driver as not in trip so DriverLocation.isInTrip stays in sync
+      await tx.driverLocation.updateMany({
+        where: { driverId },
+        data: { isInTrip: false },
+      });
 
       return updatedRide;
     });

@@ -9,6 +9,20 @@ const DRIVER_LOCATION_REDIS_TTL_SECONDS = 120; // Last location key TTL (slightl
 const getDriverAvailabilityKey = (driverId: string) =>
   `driver:${driverId}:availability`;
 const getDriverLocationKey = (driverId: string) => `driver:location:${driverId}`;
+const getDriverActiveRideKey = (driverId: string) => `driver:active_ride:${driverId}`;
+
+/** Haversine distance in km */
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+const ARRIVED_AT_PICKUP_RADIUS_KM = 0.1; // 100 metres
 
 /** When true (testing/default), heartbeat also writes location to DB. When false (production), Redis only. */
 const shouldPersistLocationToDb = (): boolean =>
@@ -78,13 +92,12 @@ export const updateDriverLocation = async (
       });
     }
 
-    // Find currently active vehicle for this driver (if any)
-    // Driver's vehicle is always active; pick first active vehicle for this driver
-    const activeVehicle = await prisma.vehicle.findFirst({
-      where: { driverId, isActive: true },
+    // Vehicle has driverId @unique – one vehicle per driver (from /documents/vehicleInfo)
+    const driverVehicle = await prisma.vehicle.findUnique({
+      where: { driverId },
       select: { id: true },
     });
-    const activeVehicleId = activeVehicle?.id || null;
+    const activeVehicleId = driverVehicle?.id || null;
 
     const driver = await prisma.driver.update({
       where: { id: driverId },
@@ -164,7 +177,7 @@ export const toggleDriverAvailability = async (
       });
     }
 
-    // Enforce active subscription when going ONLINE
+    // Enforce active subscription and daily allowance (continuous from first online today) when going ONLINE
     if (isAvailable) {
       const now = new Date();
       const activeSub = await prisma.driverSubscription.findFirst({
@@ -176,16 +189,48 @@ export const toggleDriverAvailability = async (
         orderBy: { createdAt: "desc" },
       });
 
-      const hasTimeLeft =
-        activeSub &&
-        (activeSub.remainingMinutes === null ||
-          activeSub.remainingMinutes === undefined ||
-          activeSub.remainingMinutes > 0);
-
-      if (!activeSub || !hasTimeLeft) {
+      if (!activeSub) {
         return res.status(403).json({
           success: false,
           error: "Active subscription required to go online",
+        });
+      }
+
+      // Fixed day = midnight–midnight UTC. Allowance is consumed continuously from first online that day.
+      const startOfToday = new Date(now);
+      startOfToday.setUTCHours(0, 0, 0, 0);
+
+      let statusRow = await prisma.driverStatus.findUnique({
+        where: { driverId },
+      });
+
+      // First time online today (or new day): set firstOnlineAtToday to now
+      const firstOnline = statusRow?.firstOnlineAtToday;
+      const isNewDay = !firstOnline || firstOnline < startOfToday;
+      const firstOnlineAtToday = isNewDay ? now : firstOnline!;
+
+      if (isNewDay) {
+        await prisma.driverStatus.upsert({
+          where: { driverId },
+          create: {
+            driverId,
+            status: "ONLINE",
+            lastPingAt: now,
+            firstOnlineAtToday: now,
+          },
+          update: {
+            firstOnlineAtToday: now,
+          },
+        });
+      }
+
+      // Continuous countdown: elapsed real time since first online today (does not pause when offline)
+      const elapsedMinutes = (now.getTime() - firstOnlineAtToday.getTime()) / 60000;
+      const dailyCap = activeSub.dailyAllowanceMinutes ?? null;
+      if (dailyCap != null && elapsedMinutes >= dailyCap) {
+        return res.status(403).json({
+          success: false,
+          error: "Daily allowance used. You can go online again tomorrow.",
         });
       }
     }
@@ -200,12 +245,12 @@ export const toggleDriverAvailability = async (
       },
     });
 
-    // Pick first active vehicle for DriverLocation
-    const activeVehicle = await prisma.vehicle.findFirst({
-      where: { driverId, isActive: true },
+    // Vehicle has driverId @unique – one vehicle per driver (from /documents/vehicleInfo)
+    const driverVehicle = await prisma.vehicle.findUnique({
+      where: { driverId },
       select: { id: true },
     });
-    const activeVehicleId = activeVehicle?.id || null;
+    const activeVehicleId = driverVehicle?.id || null;
 
     // Update DriverDetails.isAvailable
     const driverDetails = await prisma.driverDetails.upsert({
@@ -371,12 +416,12 @@ export const driverHeartbeat = async (
     // 2) Optionally persist to DB (for testing or when rider matching still uses DB). Disable in production with DRIVER_LOCATION_PERSIST_TO_DB=false.
     if (shouldPersistLocationToDb()) {
       try {
-        // Driver's vehicle is always active; pick first active vehicle for this driver
-        const activeVehicle = await prisma.vehicle.findFirst({
-          where: { driverId, isActive: true },
+        // Vehicle has driverId @unique – one vehicle per driver (from /documents/vehicleInfo)
+        const driverVehicle = await prisma.vehicle.findUnique({
+          where: { driverId },
           select: { id: true },
         });
-        const activeVehicleId = activeVehicle?.id || null;
+        const activeVehicleId = driverVehicle?.id || null;
 
         await prisma.driver.update({
           where: { id: driverId },
@@ -414,105 +459,149 @@ export const driverHeartbeat = async (
       }
     }
 
-    // Track online time against active subscription (if any)
+    // Auto-set "arrived at pickup" when driver is within 100m of pickup (ride status accepted, not yet set)
+    try {
+      const activeRideId = await redis.get(getDriverActiveRideKey(driverId));
+      if (activeRideId) {
+        const ride = await prisma.ride.findUnique({
+          where: { id: activeRideId },
+          select: { pickupLatitude: true, pickupLongitude: true, driverArrivedAtPickupAt: true, status: true },
+        });
+        if (
+          ride &&
+          ride.status === "accepted" &&
+          !ride.driverArrivedAtPickupAt &&
+          haversineKm(latitude, longitude, ride.pickupLatitude, ride.pickupLongitude) <= ARRIVED_AT_PICKUP_RADIUS_KM
+        ) {
+          await prisma.ride.update({
+            where: { id: activeRideId },
+            data: { driverArrivedAtPickupAt: nowDate, updatedAt: nowDate },
+          });
+        }
+      }
+    } catch (arrivedErr) {
+      // Non-blocking; do not fail heartbeat
+      console.warn("Auto arrived-at-pickup check failed:", arrivedErr);
+    }
+
+    // Check daily allowance (continuous from first online today). Force offline when exceeded.
+    let dailyAllowanceExceeded = false;
     let subscriptionJustExpired = false;
-    let remainingMinutesAfter: number | null | undefined = undefined;
 
     try {
       const currentStatus = await prisma.driverStatus.findUnique({
         where: { driverId },
       });
+      const activeSub = await prisma.driverSubscription.findFirst({
+        where: {
+          driverId,
+          status: "ACTIVE",
+          expire: { gt: nowDate },
+        },
+        orderBy: { createdAt: "desc" },
+      });
 
-      // Only count minutes when previously ONLINE and we have a lastPingAt
-      if (currentStatus && currentStatus.status === "ONLINE" && currentStatus.lastPingAt) {
-        const lastPingMs = currentStatus.lastPingAt.getTime();
-        const deltaMs = now - lastPingMs;
-        const deltaMinutes = Math.floor(deltaMs / 60000);
+      let forcedOffline = false;
 
-        if (deltaMinutes > 0) {
+      // No active subscription (expired or none): force offline
+      if (currentStatus?.status === "ONLINE" && !activeSub) {
+        subscriptionJustExpired = true;
+        forcedOffline = true;
+        await prisma.$transaction(async (tx) => {
+          await tx.driverStatus.update({
+            where: { driverId },
+            data: { status: "OFFLINE" },
+          });
+          await tx.driverLocation.updateMany({
+            where: { driverId },
+            data: { isOnline: false, isAvailable: false },
+          });
+        });
+        try {
+          await redis.del(getDriverAvailabilityKey(driverId));
+        } catch (_) {}
+      }
+
+      // Daily cap: continuous countdown from first online today (midnight–midnight UTC)
+      if (!forcedOffline) {
+        const firstOnline = currentStatus?.firstOnlineAtToday;
+        const startOfToday = new Date(nowDate);
+        startOfToday.setUTCHours(0, 0, 0, 0);
+        const dailyCap = activeSub?.dailyAllowanceMinutes ?? null;
+        const sameDay = firstOnline && firstOnline >= startOfToday;
+        const elapsedMinutes = sameDay
+          ? (now - firstOnline!.getTime()) / 60000
+          : 0;
+
+        if (dailyCap != null && sameDay && elapsedMinutes >= dailyCap) {
+          dailyAllowanceExceeded = true;
+          forcedOffline = true;
           await prisma.$transaction(async (tx) => {
-            // 1) Update DriverStatus: lastPingAt + totalOnlineHours
             await tx.driverStatus.update({
+              where: { driverId },
+              data: { status: "OFFLINE" },
+            });
+            await tx.driverLocation.updateMany({
+              where: { driverId },
+              data: { isOnline: false, isAvailable: false },
+            });
+          });
+          try {
+            await redis.del(getDriverAvailabilityKey(driverId));
+          } catch (_) {}
+        }
+      }
+
+      if (!forcedOffline) {
+        if (currentStatus && currentStatus.status === "ONLINE" && currentStatus.lastPingAt) {
+          const lastPingMs = currentStatus.lastPingAt.getTime();
+          const deltaMs = now - lastPingMs;
+          const deltaMinutes = Math.floor(deltaMs / 60000);
+
+          if (deltaMinutes > 0) {
+            await prisma.driverStatus.update({
               where: { driverId },
               data: {
                 lastPingAt: nowDate,
-                totalOnlineHours: {
-                  increment: deltaMinutes / 60,
-                },
+                totalOnlineHours: { increment: deltaMinutes / 60 },
               },
             });
-
-            // 2) Update active subscription remainingMinutes if present
-            const activeSub = await tx.driverSubscription.findFirst({
-              where: {
-                driverId,
-                status: "ACTIVE",
-                expire: { gt: nowDate },
-              },
-              orderBy: { createdAt: "desc" },
+          } else {
+            await prisma.driverStatus.update({
+              where: { driverId },
+              data: { lastPingAt: nowDate, status: "ONLINE" },
             });
-
-            if (activeSub && activeSub.remainingMinutes !== null && activeSub.remainingMinutes !== undefined) {
-              const newRemaining = Math.max(activeSub.remainingMinutes - deltaMinutes, 0);
-              remainingMinutesAfter = newRemaining;
-              const newStatus = newRemaining > 0 ? "ACTIVE" : "EXPIRED";
-
-              await tx.driverSubscription.update({
-                where: { id: activeSub.id },
-                data: {
-                  remainingMinutes: newRemaining,
-                  status: newStatus,
-                },
-              });
-
-              if (newStatus === "EXPIRED") {
-                subscriptionJustExpired = true;
-
-                // When subscription expires, force driver offline and clear availability
-                await tx.driverStatus.update({
-                  where: { driverId },
-                  data: { status: "OFFLINE" },
-                });
-                await tx.driverLocation.updateMany({
-                  where: { driverId },
-                  data: { isOnline: false, isAvailable: false },
-                });
-              }
-            }
-          });
+          }
         } else {
-          // No whole minute passed; just refresh lastPingAt
-          await prisma.driverStatus.update({
+          await prisma.driverStatus.upsert({
             where: { driverId },
-            data: { lastPingAt: nowDate, status: "ONLINE" },
+            create: {
+              driverId,
+              status: "ONLINE",
+              lastPingAt: nowDate,
+            },
+            update: {
+              status: "ONLINE",
+              lastPingAt: nowDate,
+            },
           });
         }
-      } else {
-        // First heartbeat or previously offline: ensure status row exists and set lastPingAt
-        await prisma.driverStatus.upsert({
-          where: { driverId },
-          create: {
-            driverId,
-            status: "ONLINE",
-            lastPingAt: nowDate,
-          },
-          update: {
-            status: "ONLINE",
-            lastPingAt: nowDate,
-          },
-        });
       }
     } catch (dbError) {
       console.warn(
         "Driver heartbeat subscription/time tracking failed:",
         dbError instanceof Error ? dbError.message : dbError
       );
-      // Do not block the heartbeat on DB tracking issues
     }
 
+    const message = subscriptionJustExpired
+      ? "Subscription expired; you are now offline"
+      : dailyAllowanceExceeded
+        ? "Daily allowance used; you are now offline"
+        : "Heartbeat received";
     return res.status(200).json({
       success: true,
-      message: "Heartbeat received",
+      message,
       data: {
         driverId,
         lastPing: now,
@@ -521,8 +610,8 @@ export const driverHeartbeat = async (
         locationInRedis: true,
         locationPersistedToDb: shouldPersistLocationToDb(),
         subscription: {
+          dailyAllowanceExceeded,
           justExpired: subscriptionJustExpired,
-          remainingMinutes: remainingMinutesAfter ?? null,
         },
       },
     });

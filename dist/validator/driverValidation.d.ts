@@ -1,39 +1,29 @@
 import { z } from 'zod';
 export declare const driverSignupSchema: z.ZodEffects<z.ZodObject<{
-    email: z.ZodString;
+    email: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodLiteral<"">]>>;
     firstName: z.ZodString;
     lastName: z.ZodString;
-    password: z.ZodString;
-    confirmPassword: z.ZodString;
-    phoneNumber: z.ZodEffects<z.ZodString, string, string>;
+    phoneNumber: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
 }, "strip", z.ZodTypeAny, {
-    email: string;
-    password: string;
-    phoneNumber: string;
     firstName: string;
     lastName: string;
-    confirmPassword: string;
+    email?: string | undefined;
+    phoneNumber?: string | undefined;
 }, {
-    email: string;
-    password: string;
-    phoneNumber: string;
     firstName: string;
     lastName: string;
-    confirmPassword: string;
+    email?: string | undefined;
+    phoneNumber?: string | undefined;
 }>, {
-    email: string;
-    password: string;
-    phoneNumber: string;
     firstName: string;
     lastName: string;
-    confirmPassword: string;
+    email?: string | undefined;
+    phoneNumber?: string | undefined;
 }, {
-    email: string;
-    password: string;
-    phoneNumber: string;
     firstName: string;
     lastName: string;
-    confirmPassword: string;
+    email?: string | undefined;
+    phoneNumber?: string | undefined;
 }>;
 export declare const driverVehicleInfoSchema: z.ZodObject<{
     model: z.ZodString;
@@ -53,11 +43,11 @@ export declare const driverVehicleInfoSchema: z.ZodObject<{
     number: string;
     model: string;
     drivingExperience: number;
-    brand: string;
     year: number;
     fuelType: string;
     seatingCapacity: number;
     insuranceStatus: boolean;
+    brand: string;
     hasCNG?: boolean | undefined;
     hasElectric?: boolean | undefined;
     roofTop?: boolean | undefined;
@@ -67,14 +57,14 @@ export declare const driverVehicleInfoSchema: z.ZodObject<{
     number: string;
     model: string;
     drivingExperience: number;
-    brand: string;
     year: number;
     fuelType: string;
     seatingCapacity: number;
+    brand: string;
     hasCNG?: boolean | undefined;
     hasElectric?: boolean | undefined;
-    roofTop?: boolean | undefined;
     insuranceStatus?: boolean | undefined;
+    roofTop?: boolean | undefined;
     insuranceExpiryDate?: string | undefined;
     registrationExpiryDate?: string | undefined;
 }>;

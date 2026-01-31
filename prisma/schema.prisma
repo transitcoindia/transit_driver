@@ -285,6 +285,9 @@ model DriverSubscription {
   //track remaining time if subscription is paused
   remainingMinutes Int?
 
+  // Per-day cap (minutes). Continuous countdown from first online that day. null = no daily cap.
+  dailyAllowanceMinutes Int?
+
   @@index([driverId])
   @@index([status, expire])
 }
@@ -440,6 +443,10 @@ model Ride {
 
   // Ride OTP for security (generated when driver accepts, verified before ride starts)
   rideOtp          String?  // 4-digit OTP for ride verification (no expiration)
+
+  // Waiting time at pickup: driver arrived till OTP entered (first 3 min free; then ₹1/min 6–22, ₹1.5/min 22–6)
+  driverArrivedAtPickupAt DateTime?
+  waitingCharges         Float?    // in rupees
 
   // Timestamps
   createdAt         DateTime @default(now())
@@ -712,6 +719,8 @@ model DriverStatus {
   status           DriverStatusType @default(OFFLINE)
   lastPingAt       DateTime         @default(now())
   totalOnlineHours Float            @default(0)
+  // First time driver went online this calendar day (UTC). Used for continuous daily allowance countdown.
+  firstOnlineAtToday DateTime?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
