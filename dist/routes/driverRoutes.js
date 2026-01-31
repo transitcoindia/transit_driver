@@ -138,7 +138,8 @@ router.post('/location', authMiddle_1.authenticate, location_1.updateDriverLocat
 router.get('/location', authMiddle_1.authenticate, location_1.getDriverLocation);
 router.post('/availability', authMiddle_1.authenticate, location_1.toggleDriverAvailability);
 router.post('/availability/heartbeat', authMiddle_1.authenticate, location_1.driverHeartbeat);
-// Subscription routes
+// Subscription routes (GET /subscription/plans is public so app can show catalogue without auth)
+router.get('/subscription/plans', subscription_1.getSubscriptionPlans);
 router.post('/subscription/activate', authMiddle_1.authenticate, subscription_1.activateSubscription);
 router.get('/subscription', authMiddle_1.authenticate, subscription_1.getCurrentSubscription);
 // Admin routes for driver management

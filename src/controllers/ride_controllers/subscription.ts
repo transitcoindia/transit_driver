@@ -42,6 +42,44 @@ const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   { id: "car_monthly_unlimited", vehicleType: "CAR", label: "Car Monthly Unlimited", price: 1699, durationDays: 30, includedMinutes: null },
 ];
 
+/**
+ * Get subscription plans catalogue
+ * GET /api/driver/subscription/plans
+ * Query: vehicleType (optional) - BIKE | AUTO | CAR to filter plans
+ */
+export const getSubscriptionPlans = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const vehicleType = req.query.vehicleType as string | undefined;
+    let plans = SUBSCRIPTION_PLANS;
+    if (vehicleType) {
+      const normalized = vehicleType.toUpperCase() as VehiclePlanType;
+      if (["BIKE", "AUTO", "CAR"].includes(normalized)) {
+        plans = SUBSCRIPTION_PLANS.filter((p) => p.vehicleType === normalized);
+      }
+    }
+    return res.status(200).json({
+      success: true,
+      data: {
+        plans: plans.map((p) => ({
+          id: p.id,
+          vehicleType: p.vehicleType,
+          label: p.label,
+          price: p.price,
+          durationDays: p.durationDays,
+          includedMinutes: p.includedMinutes,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error("Error getting subscription plans:", error);
+    return next(new AppError("Failed to get subscription plans", 500));
+  }
+};
+
 // Helper to map Vehicle.model/vehicleType to plan vehicle type
 function normalizeVehicleType(raw: string | null | undefined): VehiclePlanType | null {
   if (!raw) return null;

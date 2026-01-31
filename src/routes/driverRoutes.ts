@@ -48,6 +48,7 @@ import {
 import {
     activateSubscription,
     getCurrentSubscription,
+    getSubscriptionPlans,
 } from '../controllers/ride_controllers/subscription';
 import { updateDriverProfile, uploadDriverProfileImage } from '../controllers/auth_controllers/profile';
 import { getDocumentStatus, getVehicleImages, uploadDocuments, createOrUpdateVehicleInfo, uploadVehicleImages } from '../controllers/auth_controllers/documents';
@@ -194,7 +195,8 @@ router.get('/location', authenticate as RequestHandler, getDriverLocation as Req
 router.post('/availability', authenticate as RequestHandler, toggleDriverAvailability as RequestHandler);
 router.post('/availability/heartbeat', authenticate as RequestHandler, driverHeartbeat as RequestHandler);
 
-// Subscription routes
+// Subscription routes (GET /subscription/plans is public so app can show catalogue without auth)
+router.get('/subscription/plans', getSubscriptionPlans as RequestHandler);
 router.post('/subscription/activate', authenticate as RequestHandler, activateSubscription as RequestHandler);
 router.get('/subscription', authenticate as RequestHandler, getCurrentSubscription as RequestHandler);
 
