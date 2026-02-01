@@ -671,6 +671,9 @@ export const getUserDetails = async (req: Request, res: Response, next: NextFunc
                         state: true,
                         country: true
                     }
+                },
+                driverLocation: {
+                    select: { isOnline: true, isAvailable: true }
                 }
             }
         });
@@ -686,6 +689,10 @@ export const getUserDetails = async (req: Request, res: Response, next: NextFunc
         const [firstName, ...lastNameParts] = driver.name.split(' ');
         const lastName = lastNameParts.join(' ');
 
+        const loc = driver.driverLocation as { isOnline?: boolean } | null;
+        const isOnline = loc?.isOnline === true;
+        const isAvailable = driver.driverDetails?.isAvailable === true;
+
         return res.status(200).json({
             success: true,
             data: {
@@ -697,7 +704,9 @@ export const getUserDetails = async (req: Request, res: Response, next: NextFunc
                 emailVerified: driver.user.emailVerified, // From User table
                 phoneNumberVerified: driver.user.phoneNumberVerified, // From User table
                 approvalStatus: driver.approvalStatus, // PENDING, APPROVED, REJECTED, SUSPENDED
-                driverDetails: driver.driverDetails
+                driverDetails: driver.driverDetails,
+                isOnline,
+                isAvailable
             }
         });
     } catch (error) {
