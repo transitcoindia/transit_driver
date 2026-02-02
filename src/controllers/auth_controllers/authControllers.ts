@@ -674,7 +674,8 @@ export const getUserDetails = async (req: Request, res: Response, next: NextFunc
                 },
                 driverLocation: {
                     select: { isOnline: true, isAvailable: true }
-                }
+                },
+                vehicle: { take: 1, select: { vehicleType: true } }
             }
         });
 
@@ -692,6 +693,14 @@ export const getUserDetails = async (req: Request, res: Response, next: NextFunc
         const loc = driver.driverLocation as { isOnline?: boolean } | null;
         const isOnline = loc?.isOnline === true;
         const isAvailable = driver.driverDetails?.isAvailable === true;
+        // Map vehicle type for subscription filtering: sedan/suv/hatchback -> CAR, bike -> BIKE, auto -> AUTO
+        const rawVehicleType = (driver as any).vehicle?.[0]?.vehicleType?.toLowerCase?.();
+        let vehicleTypeForPlans: string | null = null;
+        if (rawVehicleType) {
+            if (rawVehicleType === 'bike') vehicleTypeForPlans = 'BIKE';
+            else if (rawVehicleType === 'auto') vehicleTypeForPlans = 'AUTO';
+            else if (['sedan', 'suv', 'hatchback', 'car'].includes(rawVehicleType)) vehicleTypeForPlans = 'CAR';
+        }
 
         return res.status(200).json({
             success: true,
@@ -706,7 +715,8 @@ export const getUserDetails = async (req: Request, res: Response, next: NextFunc
                 approvalStatus: driver.approvalStatus, // PENDING, APPROVED, REJECTED, SUSPENDED
                 driverDetails: driver.driverDetails,
                 isOnline,
-                isAvailable
+                isAvailable,
+                vehicleType: vehicleTypeForPlans
             }
         });
     } catch (error) {

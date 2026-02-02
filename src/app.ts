@@ -4,7 +4,7 @@ import cors, { CorsOptions } from 'cors';
 import { createServer } from 'http';
 import dotenv from 'dotenv';
 import  driverRoutes  from './routes/driverRoutes'
-// import { initializeSocketServer } from './socket/socketServer';
+import { initializeSocketServer } from './socket/socketServer';
 
 // Load environment variables
 dotenv.config();
@@ -13,8 +13,8 @@ dotenv.config();
 const app: Express = express();
 const httpServer = createServer(app);
 
-// Initialize Socket.IO
-// initializeSocketServer(httpServer);
+// Initialize Socket.IO (drivers connect when online to receive ride requests)
+initializeSocketServer(httpServer);
 
 // CORS Configuration
 // Allow all origins for now - can be restricted in production via CORS_ORIGIN env var

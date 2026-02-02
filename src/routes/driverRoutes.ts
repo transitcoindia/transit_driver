@@ -195,6 +195,9 @@ router.get('/location', authenticate as RequestHandler, getDriverLocation as Req
 router.post('/availability', authenticate as RequestHandler, toggleDriverAvailability as RequestHandler);
 router.post('/availability/heartbeat', authenticate as RequestHandler, driverHeartbeat as RequestHandler);
 
+// Internal: broadcast new ride request to drivers (called by transit_backend)
+router.post('/internal/broadcast-ride-request', broadcastRideRequest as RequestHandler);
+
 // Subscription routes (GET /subscription/plans is public so app can show catalogue without auth)
 router.get('/subscription/plans', getSubscriptionPlans as RequestHandler);
 router.post('/subscription/activate', authenticate as RequestHandler, activateSubscription as RequestHandler);
