@@ -58,7 +58,7 @@ export const acceptRide = async (
       return next(new AppError("Ride ID is required", 400));
     }
 
-    // Find the ride
+    // Find the ride (shared DB with rider backend)
     const ride = await prisma.ride.findUnique({
       where: { id: rideId },
       include: {
@@ -71,14 +71,14 @@ export const acceptRide = async (
       return next(new AppError("Ride not found", 404));
     }
 
-    // Verify driver is assigned to this ride
-    if (ride.driverId !== driverId) {
+    // If a driver is already assigned and it's not this driver, block
+    if (ride.driverId && ride.driverId !== driverId) {
       return next(
         new AppError("You are not assigned to this ride", 403)
       );
     }
 
-    // Check if ride can be accepted
+    // Check if ride can be accepted (only pending rides)
     if (ride.status !== "pending") {
       return next(
         new AppError(
@@ -91,12 +91,13 @@ export const acceptRide = async (
     // Generate ride OTP (4-digit code for security - no expiration)
     const rideOtp = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit OTP
 
-    // Update ride status to accepted and generate OTP
+    // Update ride: mark accepted, attach driverId if missing, generate OTP
     const updatedRide = await prisma.ride.update({
       where: { id: rideId },
       data: {
         status: "accepted",
         rideOtp: rideOtp,
+        driverId: driverId,
         updatedAt: new Date(),
       },
       select: {

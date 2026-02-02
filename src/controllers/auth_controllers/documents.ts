@@ -733,6 +733,7 @@ export const createOrUpdateVehicleInfo = async (
       insuranceExpiryDate,
       registrationExpiryDate,
       drivingExperience,
+      vehicleType,
     } = validatedData;
 
     // Check if vehicle already exists for this driver
@@ -740,18 +741,32 @@ export const createOrUpdateVehicleInfo = async (
       where: { driverId: driverId },
     });
 
-    // Determine vehicle type from model (simple mapping - can be enhanced)
-    const getVehicleType = (model: string): string => {
+    // Determine vehicle type:
+    // 1) Prefer explicit vehicleType from request (normalized)
+    // 2) Fallback to inferring from model name
+    const getVehicleTypeFromModel = (model: string): string => {
       const modelLower = model.toLowerCase();
       if (modelLower.includes('suv') || modelLower.includes('xuv')) return 'suv';
       if (modelLower.includes('hatch') || modelLower.includes('hatchback')) return 'hatchback';
       if (modelLower.includes('sedan')) return 'sedan';
       if (modelLower.includes('van')) return 'van';
       if (modelLower.includes('auto') || modelLower.includes('tuk')) return 'auto';
-      return 'sedan'; // Default
+      return 'sedan'; // Default car type
     };
 
-    const vehicleType = getVehicleType(model);
+    const normalizeVehicleType = (raw?: string | null): string | null => {
+      if (!raw) return null;
+      const v = raw.trim().toLowerCase();
+      if (v === 'auto' || v === 'autorickshaw') return 'auto';
+      if (v === 'suv' || v === 'xl') return 'suv';
+      if (v === 'hatch' || v === 'hatchback' || v === 'compact') return 'hatchback';
+      if (v === 'sedan' || v === 'car') return 'sedan';
+      if (v === 'bike' || v === 'motorbike' || v === 'two_wheeler' || v === 'two-wheeler') return 'bike';
+      return v; // fallback: keep whatever was sent
+    };
+
+    const effectiveVehicleType =
+      normalizeVehicleType(vehicleType) ?? getVehicleTypeFromModel(model);
 
     // Prepare vehicle data
     const vehicleData: any = {
@@ -759,7 +774,7 @@ export const createOrUpdateVehicleInfo = async (
       model: model,
       year: year,
       licensePlate: number,
-      vehicleType: vehicleType,
+      vehicleType: effectiveVehicleType,
       fuelType: fuelType,
       seatingCapacity: seatingCapacity,
       hasCNG: hasCNG || false,

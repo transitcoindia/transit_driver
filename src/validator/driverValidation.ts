@@ -22,6 +22,8 @@ export const driverSignupSchema = z.object({
 });
 
 // Vehicle information validation schema
+// `vehicleType` is optional – when provided from the app (Auto/Bike/Car/SUV),
+// we normalize it server-side and store it on the Vehicle.
 export const driverVehicleInfoSchema = z.object({
     model: z.string().min(1, "Vehicle model is required"),
     brand: z.string().min(1, "Vehicle brand is required"),
@@ -36,6 +38,7 @@ export const driverVehicleInfoSchema = z.object({
     insuranceExpiryDate: z.string().optional(),
     registrationExpiryDate: z.string().optional(),
     drivingExperience: z.number().int().min(0, "Driving experience cannot be negative"),
+    vehicleType: z.string().optional(), // e.g. "auto", "suv", "sedan", "hatchback", "bike"
 });
 
 // Driver document upload validation schema

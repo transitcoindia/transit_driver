@@ -420,8 +420,9 @@ model Ride {
   comment           String?  // Optional review comment from rider
 
   // Relations
-  driverId          String
-  driver            Driver   @relation(fields: [driverId], references: [id])
+  // driverId is nullable until a driver is assigned (broadcast-first flow)
+  driverId          String?
+  driver            Driver?  @relation(fields: [driverId], references: [id])
   riderId           String
   rider             User     @relation("RideRider", fields: [riderId], references: [id])
   riderInfoId       String?
