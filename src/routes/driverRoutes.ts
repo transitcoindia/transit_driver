@@ -53,6 +53,7 @@ import {
 import { updateDriverProfile, uploadDriverProfileImage } from '../controllers/auth_controllers/profile';
 import { getDocumentStatus, getVehicleImages, uploadDocuments, createOrUpdateVehicleInfo, uploadVehicleImages } from '../controllers/auth_controllers/documents';
 import { authenticate, authenticateAdmin } from '../middleware/authMiddle';
+import { broadcastRideRequest } from '../controllers/ride_controllers/broadcastRideRequest';
 import {
     getAllDrivers,
     approveDriver,
