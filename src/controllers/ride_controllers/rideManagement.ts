@@ -780,4 +780,3 @@ export const storeRideAcceptedFromGateway = async (
     return next(new AppError("Failed to store accepted ride", 500));
   }
 };
-
