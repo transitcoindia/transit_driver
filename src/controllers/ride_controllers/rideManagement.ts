@@ -462,6 +462,86 @@ export const completeRide = async (
 };
 
 /**
+ * Mark payment received (driver confirms cash received)
+ * POST /api/driver/rides/:rideId/payment-received
+ */
+export const markPaymentReceived = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    if (!req.driver?.id) {
+      return next(new AppError("Driver not authenticated", 401));
+    }
+
+    const driverId = req.driver.id as string;
+    const { rideId } = req.params;
+
+    if (!rideId) {
+      return next(new AppError("Ride ID is required", 400));
+    }
+
+    const ride = await prisma.ride.findUnique({
+      where: { id: rideId },
+      select: {
+        id: true,
+        driverId: true,
+        status: true,
+        paymentMethod: true,
+        paymentStatus: true,
+      },
+    });
+
+    if (!ride) {
+      return next(new AppError("Ride not found", 404));
+    }
+
+    if (ride.driverId !== driverId) {
+      return next(new AppError("You are not assigned to this ride", 403));
+    }
+
+    if (ride.status !== "completed") {
+      return next(
+        new AppError("Can only mark payment received for completed rides", 400)
+      );
+    }
+
+    if (ride.paymentStatus === "paid") {
+      return res.status(200).json({
+        success: true,
+        message: "Payment already marked as received",
+        data: { ride: { id: ride.id, paymentStatus: "paid" } },
+      });
+    }
+
+    const updatedRide = await prisma.ride.update({
+      where: { id: rideId },
+      data: {
+        paymentStatus: "paid",
+        updatedAt: new Date(),
+      },
+      select: {
+        id: true,
+        rideCode: true,
+        status: true,
+        paymentMethod: true,
+        paymentStatus: true,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment marked as received",
+      data: { ride: updatedRide },
+    });
+  } catch (error: any) {
+    console.error("Error marking payment received:", error);
+    return next(new AppError("Failed to mark payment received", 500));
+  }
+};
+
+/**
  * Cancel ride (by driver)
  * POST /api/driver/rides/:rideId/cancel
  */

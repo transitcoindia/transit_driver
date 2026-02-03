@@ -26,6 +26,7 @@ import {
     arrivedAtPickup,
     startRide,
     completeRide,
+    markPaymentReceived,
     cancelRide,
 } from '../controllers/ride_controllers/rideManagement';
 import {
@@ -180,6 +181,7 @@ router.post('/rides/:rideId/accept', authenticate as RequestHandler, acceptRide 
 router.post('/rides/:rideId/arrived-at-pickup', authenticate as RequestHandler, arrivedAtPickup as RequestHandler);
 router.post('/rides/:rideId/start', authenticate as RequestHandler, startRide as RequestHandler);
 router.post('/rides/:rideId/complete', authenticate as RequestHandler, completeRide as RequestHandler);
+router.post('/rides/:rideId/payment-received', authenticate as RequestHandler, markPaymentReceived as RequestHandler);
 router.post('/rides/:rideId/cancel', authenticate as RequestHandler, cancelRide as RequestHandler);
 
 // Earnings routes
