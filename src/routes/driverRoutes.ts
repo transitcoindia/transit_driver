@@ -28,6 +28,7 @@ import {
     completeRide,
     markPaymentReceived,
     cancelRide,
+    storeRideAcceptedFromGateway,
 } from '../controllers/ride_controllers/rideManagement';
 import {
     getDriverEarnings,
@@ -176,7 +177,8 @@ router.get('/rides/history', authenticate as RequestHandler, getDriverRideHistor
 router.get('/rides/:rideId', authenticate as RequestHandler, getDriverRideDetails as RequestHandler);
 router.post('/rides/:rideId/rate-rider', authenticate as RequestHandler, rateRider as RequestHandler);
 
-// Ride management routes
+// Ride management routes (gateway calls rides_accepted after driver accepts via gateway)
+router.post('/rides_accepted', authenticate as RequestHandler, storeRideAcceptedFromGateway as RequestHandler);
 router.post('/rides/:rideId/accept', authenticate as RequestHandler, acceptRide as RequestHandler);
 router.post('/rides/:rideId/arrived-at-pickup', authenticate as RequestHandler, arrivedAtPickup as RequestHandler);
 router.post('/rides/:rideId/start', authenticate as RequestHandler, startRide as RequestHandler);

@@ -1,9 +1,16 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.initializeSocketServer = void 0;
+exports.getSocketIO = getSocketIO;
+exports.emitNewRideRequestToDrivers = emitNewRideRequestToDrivers;
 const socket_io_1 = require("socket.io");
 const client_1 = require("@prisma/client");
 const prisma = new client_1.PrismaClient();
+let ioInstance = null;
+/** Get Socket.IO server instance for emitting from HTTP routes (e.g. broadcast ride request). */
+function getSocketIO() {
+    return ioInstance;
+}
 const initializeSocketServer = (httpServer) => {
     const io = new socket_io_1.Server(httpServer, {
         cors: {
@@ -11,9 +18,10 @@ const initializeSocketServer = (httpServer) => {
             methods: ["GET", "POST"]
         }
     });
+    ioInstance = io;
     io.on('connection', (socket) => {
         console.log('New client connected');
-        // Driver authentication
+        // Driver authentication (token = driver ID or JWT; server validates and joins driver:${driverId})
         socket.on('driver:authenticate', async (token) => {
             try {
                 // Verify driver token and get driver info
@@ -89,4 +97,14 @@ const initializeSocketServer = (httpServer) => {
     return io;
 };
 exports.initializeSocketServer = initializeSocketServer;
+/**
+ * Emit new ride request to specific drivers (called from HTTP broadcast route).
+ */
+function emitNewRideRequestToDrivers(driverIds, payload) {
+    if (!ioInstance)
+        return;
+    driverIds.forEach((driverId) => {
+        ioInstance.to(`driver:${driverId}`).emit('driver:new_ride_request', payload);
+    });
+}
 //# sourceMappingURL=socketServer.js.map

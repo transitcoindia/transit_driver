@@ -643,7 +643,11 @@ const getUserDetails = async (req, res, next) => {
                         state: true,
                         country: true
                     }
-                }
+                },
+                driverLocation: {
+                    select: { isOnline: true, isAvailable: true }
+                },
+                vehicle: { take: 1, select: { vehicleType: true } }
             }
         });
         if (!driver || !driver.user) {
@@ -655,6 +659,20 @@ const getUserDetails = async (req, res, next) => {
         // Split name into firstName and lastName
         const [firstName, ...lastNameParts] = driver.name.split(' ');
         const lastName = lastNameParts.join(' ');
+        const loc = driver.driverLocation;
+        const isOnline = loc?.isOnline === true;
+        const isAvailable = driver.driverDetails?.isAvailable === true;
+        // Map vehicle type for subscription filtering: sedan/suv/hatchback -> CAR, bike -> BIKE, auto -> AUTO
+        const rawVehicleType = driver.vehicle?.[0]?.vehicleType?.toLowerCase?.();
+        let vehicleTypeForPlans = null;
+        if (rawVehicleType) {
+            if (rawVehicleType === 'bike')
+                vehicleTypeForPlans = 'BIKE';
+            else if (rawVehicleType === 'auto')
+                vehicleTypeForPlans = 'AUTO';
+            else if (['sedan', 'suv', 'hatchback', 'car'].includes(rawVehicleType))
+                vehicleTypeForPlans = 'CAR';
+        }
         return res.status(200).json({
             success: true,
             data: {
@@ -666,7 +684,10 @@ const getUserDetails = async (req, res, next) => {
                 emailVerified: driver.user.emailVerified, // From User table
                 phoneNumberVerified: driver.user.phoneNumberVerified, // From User table
                 approvalStatus: driver.approvalStatus, // PENDING, APPROVED, REJECTED, SUSPENDED
-                driverDetails: driver.driverDetails
+                driverDetails: driver.driverDetails,
+                isOnline,
+                isAvailable,
+                vehicleType: vehicleTypeForPlans
             }
         });
     }

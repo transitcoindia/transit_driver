@@ -18,6 +18,7 @@ const subscription_1 = require("../controllers/ride_controllers/subscription");
 const profile_1 = require("../controllers/auth_controllers/profile");
 const documents_1 = require("../controllers/auth_controllers/documents");
 const authMiddle_1 = require("../middleware/authMiddle");
+const broadcastRideRequest_1 = require("../controllers/ride_controllers/broadcastRideRequest");
 const driverAdmin_1 = require("../controllers/admin/driverAdmin");
 // Create uploads directory if it doesn't exist
 const uploadsDir = path_1.default.join(process.cwd(), 'uploads');
@@ -121,11 +122,13 @@ router.post('/password-reset/verify-otp', authControllers_1.resetPassword);
 router.get('/rides/history', authMiddle_1.authenticate, rideHistory_1.getDriverRideHistory);
 router.get('/rides/:rideId', authMiddle_1.authenticate, rideHistory_1.getDriverRideDetails);
 router.post('/rides/:rideId/rate-rider', authMiddle_1.authenticate, rating_1.rateRider);
-// Ride management routes
+// Ride management routes (gateway calls rides_accepted after driver accepts via gateway)
+router.post('/rides_accepted', authMiddle_1.authenticate, rideManagement_1.storeRideAcceptedFromGateway);
 router.post('/rides/:rideId/accept', authMiddle_1.authenticate, rideManagement_1.acceptRide);
 router.post('/rides/:rideId/arrived-at-pickup', authMiddle_1.authenticate, rideManagement_1.arrivedAtPickup);
 router.post('/rides/:rideId/start', authMiddle_1.authenticate, rideManagement_1.startRide);
 router.post('/rides/:rideId/complete', authMiddle_1.authenticate, rideManagement_1.completeRide);
+router.post('/rides/:rideId/payment-received', authMiddle_1.authenticate, rideManagement_1.markPaymentReceived);
 router.post('/rides/:rideId/cancel', authMiddle_1.authenticate, rideManagement_1.cancelRide);
 // Earnings routes
 router.get('/earnings', authMiddle_1.authenticate, earnings_1.getDriverEarnings);
@@ -138,6 +141,8 @@ router.post('/location', authMiddle_1.authenticate, location_1.updateDriverLocat
 router.get('/location', authMiddle_1.authenticate, location_1.getDriverLocation);
 router.post('/availability', authMiddle_1.authenticate, location_1.toggleDriverAvailability);
 router.post('/availability/heartbeat', authMiddle_1.authenticate, location_1.driverHeartbeat);
+// Internal: broadcast new ride request to drivers (called by transit_backend)
+router.post('/internal/broadcast-ride-request', broadcastRideRequest_1.broadcastRideRequest);
 // Subscription routes (GET /subscription/plans is public so app can show catalogue without auth)
 router.get('/subscription/plans', subscription_1.getSubscriptionPlans);
 router.post('/subscription/activate', authMiddle_1.authenticate, subscription_1.activateSubscription);

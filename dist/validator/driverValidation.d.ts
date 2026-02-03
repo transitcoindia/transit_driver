@@ -39,6 +39,7 @@ export declare const driverVehicleInfoSchema: z.ZodObject<{
     insuranceExpiryDate: z.ZodOptional<z.ZodString>;
     registrationExpiryDate: z.ZodOptional<z.ZodString>;
     drivingExperience: z.ZodNumber;
+    vehicleType: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     number: string;
     model: string;
@@ -48,6 +49,7 @@ export declare const driverVehicleInfoSchema: z.ZodObject<{
     seatingCapacity: number;
     insuranceStatus: boolean;
     brand: string;
+    vehicleType?: string | undefined;
     hasCNG?: boolean | undefined;
     hasElectric?: boolean | undefined;
     roofTop?: boolean | undefined;
@@ -61,6 +63,7 @@ export declare const driverVehicleInfoSchema: z.ZodObject<{
     fuelType: string;
     seatingCapacity: number;
     brand: string;
+    vehicleType?: string | undefined;
     hasCNG?: boolean | undefined;
     hasElectric?: boolean | undefined;
     insuranceStatus?: boolean | undefined;

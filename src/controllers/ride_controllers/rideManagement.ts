@@ -402,15 +402,12 @@ export const completeRide = async (
     if (actualDistance !== undefined) {
       updateData.actualDistance = actualDistance;
     }
-    if (paymentMethod) {
-      updateData.paymentMethod = paymentMethod;
-    }
+    const method = paymentMethod || "cash";
+    updateData.paymentMethod = method;
     if (transactionId) {
       updateData.transactionId = transactionId;
     }
-    if (paymentMethod) {
-      updateData.paymentStatus = paymentMethod === "cash" ? "pending" : "paid";
-    }
+    updateData.paymentStatus = method === "cash" ? "pending" : "paid";
 
     const updatedRide = await prisma.ride.update({
       where: { id: rideId },
@@ -651,6 +648,136 @@ export const cancelRide = async (
   } catch (error: any) {
     console.error("Error cancelling ride:", error);
     return next(new AppError("Failed to cancel ride", 500));
+  }
+};
+
+/**
+ * Store accepted ride from gateway (called after driver accepts via gateway).
+ * If ride exists (shared DB): update with driverId, status, rideOtp.
+ * If ride does not exist (separate DB): create Ride and upsert User for rider so arrived-at-pickup works.
+ * POST /api/driver/rides_accepted
+ * Body: gateway payload (rideId, rideCode, driverId, riderId, rideOtp, pickup*, drop*, estimatedFare, ...)
+ */
+export const storeRideAcceptedFromGateway = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const driverId = req.driver?.id;
+    if (!driverId) {
+      return next(new AppError("Driver not authenticated", 401));
+    }
+
+    const body = req.body as Record<string, any>;
+    const {
+      rideId,
+      rideCode,
+      riderId: externalRiderId,
+      rideOtp,
+      status,
+      pickupLatitude,
+      pickupLongitude,
+      pickupAddress,
+      dropLatitude,
+      dropLongitude,
+      dropAddress,
+      estimatedFare,
+      estimatedDistance,
+      estimatedDuration,
+      baseFare,
+      surgeMultiplier,
+    } = body;
+
+    if (!rideId || !externalRiderId) {
+      return next(new AppError("rideId and riderId are required", 400));
+    }
+    if (body.driverId && body.driverId !== driverId) {
+      return next(new AppError("driverId does not match authenticated driver", 403));
+    }
+
+    const existingRide = await prisma.ride.findUnique({
+      where: { id: rideId },
+      select: { id: true, driverId: true, status: true },
+    });
+
+    if (existingRide) {
+      if (existingRide.driverId && existingRide.driverId !== driverId) {
+        return res.status(200).json({
+          success: true,
+          message: "Ride already assigned to another driver",
+        });
+      }
+      await prisma.ride.update({
+        where: { id: rideId },
+        data: {
+          status: status || "accepted",
+          driverId,
+          rideOtp: rideOtp ?? undefined,
+          estimatedFare: estimatedFare ?? undefined,
+          estimatedDistance: estimatedDistance ?? undefined,
+          estimatedDuration: estimatedDuration ?? undefined,
+          baseFare: baseFare ?? undefined,
+          surgeMultiplier: surgeMultiplier ?? undefined,
+          updatedAt: new Date(),
+        },
+      });
+      return res.status(200).json({
+        success: true,
+        message: "Ride accepted and stored",
+        data: { rideId },
+      });
+    }
+
+    const riderId = externalRiderId as string;
+    await prisma.user.upsert({
+      where: { id: riderId },
+      create: {
+        id: riderId,
+        email: `rider-${riderId}@transit.internal`,
+        name: "Rider",
+        password: "nologin",
+      },
+      update: {},
+    });
+
+    const rideCodeVal = rideCode || Math.floor(1000 + Math.random() * 9000).toString();
+    const pickLat = Number(pickupLatitude) || 0;
+    const pickLng = Number(pickupLongitude) || 0;
+    const dropLat = dropLatitude != null ? Number(dropLatitude) : pickLat;
+    const dropLng = dropLongitude != null ? Number(dropLongitude) : pickLng;
+
+    await prisma.ride.create({
+      data: {
+        id: rideId,
+        rideCode: rideCodeVal,
+        status: status || "accepted",
+        pickupLatitude: pickLat,
+        pickupLongitude: pickLng,
+        pickupAddress: pickupAddress ?? undefined,
+        dropLatitude: dropLat,
+        dropLongitude: dropLng,
+        dropAddress: dropAddress ?? undefined,
+        riderId,
+        driverId,
+        rideOtp: rideOtp ?? undefined,
+        estimatedFare: estimatedFare != null ? Number(estimatedFare) : undefined,
+        estimatedDistance: estimatedDistance != null ? Number(estimatedDistance) : undefined,
+        estimatedDuration: estimatedDuration != null ? Number(estimatedDuration) : undefined,
+        baseFare: baseFare != null ? Number(baseFare) : undefined,
+        surgeMultiplier: surgeMultiplier != null ? Number(surgeMultiplier) : 1,
+        updatedAt: new Date(),
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Ride accepted and stored",
+      data: { rideId },
+    });
+  } catch (error: any) {
+    console.error("Error storing ride accepted from gateway:", error);
+    return next(new AppError("Failed to store accepted ride", 500));
   }
 };
 
