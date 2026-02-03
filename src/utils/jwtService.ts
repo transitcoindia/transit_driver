@@ -4,14 +4,14 @@ if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET is not defined');
 }
 
-// Legacy function to generate JWTs
+// Legacy function to generate JWTs (60-day session)
 export const generateToken = (userId: string) => {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET as string, { expiresIn: '30d' });
+  return jwt.sign({ id: userId }, process.env.JWT_SECRET as string, { expiresIn: '60d' });
 };
 
-// Generate access token with 30 days expiration
+// Generate access token with 60-day session
 export const generateAccessToken = (userId: string) => {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET as string, { expiresIn: '30d' });
+  return jwt.sign({ id: userId }, process.env.JWT_SECRET as string, { expiresIn: '60d' });
 };
 
 // Verify access token
