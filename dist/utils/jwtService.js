@@ -8,14 +8,14 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 if (!process.env.JWT_SECRET) {
     throw new Error('JWT_SECRET is not defined');
 }
-// Legacy function to generate JWTs
+// Legacy function to generate JWTs (60-day session)
 const generateToken = (userId) => {
-    return jsonwebtoken_1.default.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    return jsonwebtoken_1.default.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: '60d' });
 };
 exports.generateToken = generateToken;
-// Generate access token with 30 days expiration
+// Generate access token with 60-day session
 const generateAccessToken = (userId) => {
-    return jsonwebtoken_1.default.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    return jsonwebtoken_1.default.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: '60d' });
 };
 exports.generateAccessToken = generateAccessToken;
 // Verify access token
