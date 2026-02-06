@@ -52,7 +52,7 @@ import {
     getCurrentSubscription,
     getSubscriptionPlans,
 } from '../controllers/ride_controllers/subscription';
-import { updateDriverProfile, uploadDriverProfileImage } from '../controllers/auth_controllers/profile';
+import { updateDriverProfile, uploadDriverProfileImage, uploadVerificationSelfie } from '../controllers/auth_controllers/profile';
 import { getDocumentStatus, getVehicleImages, uploadDocuments, createOrUpdateVehicleInfo, uploadVehicleImages } from '../controllers/auth_controllers/documents';
 import { authenticate, authenticateAdmin } from '../middleware/authMiddle';
 import { broadcastRideRequest } from '../controllers/ride_controllers/broadcastRideRequest';
@@ -140,6 +140,21 @@ const profileImageUpload = multer({
     }
 }).single('profileImage');
 
+// Single image for daily verification selfie (does not update profile photo)
+const verificationSelfieUpload = multer({
+    storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB
+    },
+    fileFilter: (req: express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed for verification selfie'));
+        }
+    }
+}).single('verificationSelfie');
+
 const router = express.Router();
 
 // Registration routes
@@ -162,6 +177,7 @@ router.put('/profile', authenticate as RequestHandler, updateDriverProfile as Re
 router.post('/profile/request-phone-otp', authenticate as RequestHandler, requestProfilePhoneOtp as RequestHandler);
 router.post('/profile/verify-phone-otp', authenticate as RequestHandler, verifyProfilePhoneOtp as RequestHandler);
 router.post('/profile/image', authenticate as RequestHandler, profileImageUpload as any, uploadDriverProfileImage as RequestHandler);
+router.post('/profile/verification-selfie', authenticate as RequestHandler, verificationSelfieUpload as any, uploadVerificationSelfie as RequestHandler);
 router.get('/documents/status', authenticate as RequestHandler, getDocumentStatus as RequestHandler);
 router.get('/documents/vehicleImages', authenticate as RequestHandler, getVehicleImages as RequestHandler);
 router.post('/documents/vehicleImages', authenticate as RequestHandler, vehicleImageUpload as any, uploadVehicleImages as RequestHandler);

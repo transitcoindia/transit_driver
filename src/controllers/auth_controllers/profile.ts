@@ -163,3 +163,77 @@ export const uploadDriverProfileImage = async (
   }
 };
 
+/**
+ * Upload daily verification selfie (for admin review).
+ * Does NOT update profile photo. Replaces previous day's selfie in DB.
+ * POST /api/driver/profile/verification-selfie
+ * Body: multipart/form-data with field "verificationSelfie"
+ */
+export const uploadVerificationSelfie = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    if (!req.driver?.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Driver not authenticated",
+      });
+    }
+    const driverId = req.driver.id as string;
+
+    const file = (req as any).file as Express.Multer.File | undefined;
+
+    if (!file) {
+      return res.status(400).json({
+        success: false,
+        message: "No verification selfie uploaded",
+      });
+    }
+
+    if (!file.path || !fs.existsSync(file.path)) {
+      return next(
+        new AppError(
+          `Uploaded file not found on disk: ${file.originalname}`,
+          500
+        )
+      );
+    }
+
+    const imageUrl = await uploadToSupabase(file, "driver-verification-selfies");
+
+    const driverDetails = await prisma.driverDetails.upsert({
+      where: { driverId },
+      create: {
+        driverId,
+        licenseNumber: `TEMP-${driverId}`,
+        verificationSelfieUrl: imageUrl,
+      },
+      update: {
+        verificationSelfieUrl: imageUrl,
+      },
+      select: {
+        verificationSelfieUrl: true,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Verification selfie saved successfully",
+      data: {
+        verificationSelfieUrl: driverDetails.verificationSelfieUrl,
+      },
+    });
+  } catch (error: any) {
+    console.error("Error uploading verification selfie:", error);
+    return next(
+      new AppError(
+        "Failed to upload verification selfie: " +
+          (error instanceof Error ? error.message : "Unknown error"),
+        500
+      )
+    );
+  }
+};
+

@@ -445,6 +445,11 @@ model Ride {
   // Ride OTP for security (generated when driver accepts, verified before ride starts)
   rideOtp          String?  // 4-digit OTP for ride verification (no expiration)
 
+  // Driver location at accept – for 1 km cancellation rule (rider cannot cancel after driver has travelled 1 km towards pickup)
+  driverAcceptedAt   DateTime?
+  driverLatAtAccept   Float?
+  driverLngAtAccept   Float?
+
   // Waiting time at pickup: driver arrived till OTP entered (first 3 min free; then ₹1/min 6–22, ₹1.5/min 22–6)
   driverArrivedAtPickupAt DateTime?
   waitingCharges         Float?    // in rupees
@@ -659,6 +664,8 @@ model DriverDetails {
   totalRides    Int       @default(0)
   totalEarnings Float     @default(0)
   profileImage  String?
+  /// Daily verification selfie (replaced each day). For admin review; profile photo stays unchanged.
+  verificationSelfieUrl String?
   dateOfBirth   DateTime?
   gender        String?
   address       String?

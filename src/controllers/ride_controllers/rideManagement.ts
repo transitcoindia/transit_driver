@@ -694,9 +694,7 @@ export const storeRideAcceptedFromGateway = async (
     }
     if (body.driverId && body.driverId !== driverId) {
       return next(new AppError("driverId does not match authenticated driver", 403));
-    }
-
-    const existingRide = await prisma.ride.findUnique({
+    }    const existingRide = await prisma.ride.findUnique({
       where: { id: rideId },
       select: { id: true, driverId: true, status: true },
     });
