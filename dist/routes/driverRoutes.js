@@ -9,6 +9,7 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const authControllers_1 = require("../controllers/auth_controllers/authControllers");
 const rideHistory_1 = require("../controllers/ride_controllers/rideHistory");
+const rideChat_1 = require("../controllers/ride_controllers/rideChat");
 const rideManagement_1 = require("../controllers/ride_controllers/rideManagement");
 const earnings_1 = require("../controllers/ride_controllers/earnings");
 const location_1 = require("../controllers/ride_controllers/location");
@@ -137,6 +138,8 @@ router.post('/password-reset/verify-otp', authControllers_1.resetPassword);
 // Ride history routes
 router.get('/rides/history', authMiddle_1.authenticate, rideHistory_1.getDriverRideHistory);
 router.get('/rides/:rideId', authMiddle_1.authenticate, rideHistory_1.getDriverRideDetails);
+router.get('/rides/:rideId/chat', authMiddle_1.authenticate, rideChat_1.getRideChatHistory);
+router.post('/rides/:rideId/chat', authMiddle_1.authenticate, rideChat_1.sendRideChatMessage);
 router.post('/rides/:rideId/rate-rider', authMiddle_1.authenticate, rating_1.rateRider);
 // Ride management routes (gateway calls rides_accepted after driver accepts via gateway)
 router.post('/rides_accepted', authMiddle_1.authenticate, rideManagement_1.storeRideAcceptedFromGateway);

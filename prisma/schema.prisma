@@ -437,6 +437,9 @@ model Ride {
   waypoints         Json?    // Intermediate stops [{latitude, longitude, address, order}]
   driverLocationUpdates Json? // Array of {lat, lng, timestamp}
 
+  // Rider's selected vehicle type (from rider backend; must match rider schema for shared DB)
+  requestedVehicleType String? // e.g. "sedan", "suv", "auto", "hatchback"
+
   // Scheduled/Advance booking
   isScheduled       Boolean  @default(false)
   scheduledPickupTime DateTime? // For advance bookings
@@ -464,6 +467,19 @@ model Ride {
   @@index([serviceZoneId])
   @@index([driverId, status, rating]) // For rating queries
   payments Payment[]
+  chatMessages ChatMessage[]
+}
+
+model ChatMessage {
+  id         String   @id @default(cuid())
+  rideId     String
+  ride       Ride     @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  senderId   String   // driver or rider user id
+  senderType String   // "driver" | "rider"
+  text       String   @db.Text
+  createdAt  DateTime @default(now())
+
+  @@index([rideId, createdAt])
 }
 
 // Payment model for ride payments

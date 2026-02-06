@@ -21,6 +21,7 @@ import {
     getDriverRideHistory,
     getDriverRideDetails,
 } from '../controllers/ride_controllers/rideHistory';
+import { getRideChatHistory, sendRideChatMessage } from '../controllers/ride_controllers/rideChat';
 import {
     acceptRide,
     arrivedAtPickup,
@@ -191,6 +192,8 @@ router.post('/password-reset/verify-otp', resetPassword as RequestHandler);
 // Ride history routes
 router.get('/rides/history', authenticate as RequestHandler, getDriverRideHistory as RequestHandler);
 router.get('/rides/:rideId', authenticate as RequestHandler, getDriverRideDetails as RequestHandler);
+router.get('/rides/:rideId/chat', authenticate as RequestHandler, getRideChatHistory as RequestHandler);
+router.post('/rides/:rideId/chat', authenticate as RequestHandler, sendRideChatMessage as RequestHandler);
 router.post('/rides/:rideId/rate-rider', authenticate as RequestHandler, rateRider as RequestHandler);
 
 // Ride management routes (gateway calls rides_accepted after driver accepts via gateway)
