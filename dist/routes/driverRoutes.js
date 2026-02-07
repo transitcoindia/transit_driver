@@ -17,6 +17,7 @@ const payment_1 = require("../controllers/ride_controllers/payment");
 const rating_1 = require("../controllers/ride_controllers/rating");
 const subscription_1 = require("../controllers/ride_controllers/subscription");
 const profile_1 = require("../controllers/auth_controllers/profile");
+const fcmToken_1 = require("../controllers/auth_controllers/fcmToken");
 const documents_1 = require("../controllers/auth_controllers/documents");
 const authMiddle_1 = require("../middleware/authMiddle");
 const broadcastRideRequest_1 = require("../controllers/ride_controllers/broadcastRideRequest");
@@ -121,6 +122,7 @@ router.post('/login/phoneNumber', authControllers_1.loginWithPhoneNumber); // ba
 // OAuth routes
 router.post('/auth/google', authControllers_1.googleAuth);
 // Protected routes
+router.post('/fcm-token', authMiddle_1.authenticate, fcmToken_1.registerFcmToken);
 router.get('/profile', authMiddle_1.authenticate, authControllers_1.getUserDetails);
 router.put('/profile', authMiddle_1.authenticate, profile_1.updateDriverProfile);
 router.post('/profile/request-phone-otp', authMiddle_1.authenticate, authControllers_1.requestProfilePhoneOtp);

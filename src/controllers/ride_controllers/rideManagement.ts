@@ -766,9 +766,7 @@ export const storeRideAcceptedFromGateway = async (
         surgeMultiplier: surgeMultiplier != null ? Number(surgeMultiplier) : 1,
         updatedAt: new Date(),
       },
-    });
-
-    return res.status(200).json({
+    });    return res.status(200).json({
       success: true,
       message: "Ride accepted and stored",
       data: { rideId },

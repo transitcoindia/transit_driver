@@ -54,6 +54,7 @@ import {
     getSubscriptionPlans,
 } from '../controllers/ride_controllers/subscription';
 import { updateDriverProfile, uploadDriverProfileImage, uploadVerificationSelfie } from '../controllers/auth_controllers/profile';
+import { registerFcmToken } from '../controllers/auth_controllers/fcmToken';
 import { getDocumentStatus, getVehicleImages, uploadDocuments, createOrUpdateVehicleInfo, uploadVehicleImages } from '../controllers/auth_controllers/documents';
 import { authenticate, authenticateAdmin } from '../middleware/authMiddle';
 import { broadcastRideRequest } from '../controllers/ride_controllers/broadcastRideRequest';
@@ -173,6 +174,7 @@ router.post('/login/phoneNumber', loginWithPhoneNumber as RequestHandler); // ba
 router.post('/auth/google', (googleAuth as unknown) as RequestHandler);
 
 // Protected routes
+router.post('/fcm-token', authenticate as RequestHandler, registerFcmToken as RequestHandler);
 router.get('/profile', authenticate as RequestHandler, getUserDetails as RequestHandler);
 router.put('/profile', authenticate as RequestHandler, updateDriverProfile as RequestHandler);
 router.post('/profile/request-phone-otp', authenticate as RequestHandler, requestProfilePhoneOtp as RequestHandler);

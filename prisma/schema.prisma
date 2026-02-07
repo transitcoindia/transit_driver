@@ -221,6 +221,7 @@ model Driver {
   // Driver's Government IDs
   aadharNumber String?
   panNumber    String?
+  fcmToken    String?
 
   // Real-time location fields
   currentLat Float?
