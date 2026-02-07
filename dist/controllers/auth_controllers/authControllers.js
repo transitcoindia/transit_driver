@@ -673,6 +673,15 @@ const getUserDetails = async (req, res, next) => {
             else if (['sedan', 'suv', 'hatchback', 'car'].includes(rawVehicleType))
                 vehicleTypeForPlans = 'CAR';
         }
+        // Merge Driver.averageRating/totalRatings (updated when riders rate) into driverDetails for ratings display
+        const driverDetails = driver.driverDetails ? {
+            ...driver.driverDetails,
+            rating: driver.averageRating ?? driver.driverDetails?.rating ?? 0,
+            totalRides: driver.totalRatings ?? driver.driverDetails?.totalRides ?? 0,
+        } : {
+            rating: driver.averageRating ?? 0,
+            totalRides: driver.totalRatings ?? 0,
+        };
         return res.status(200).json({
             success: true,
             data: {
@@ -684,7 +693,7 @@ const getUserDetails = async (req, res, next) => {
                 emailVerified: driver.user.emailVerified, // From User table
                 phoneNumberVerified: driver.user.phoneNumberVerified, // From User table
                 approvalStatus: driver.approvalStatus, // PENDING, APPROVED, REJECTED, SUSPENDED
-                driverDetails: driver.driverDetails,
+                driverDetails,
                 isOnline,
                 isAvailable,
                 vehicleType: vehicleTypeForPlans
