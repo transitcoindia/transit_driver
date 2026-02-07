@@ -687,9 +687,7 @@ export const storeRideAcceptedFromGateway = async (
       estimatedDuration,
       baseFare,
       surgeMultiplier,
-    } = body;
-
-    if (!rideId || !externalRiderId) {
+    } = body;    if (!rideId || !externalRiderId) {
       return next(new AppError("rideId and riderId are required", 400));
     }
     if (body.driverId && body.driverId !== driverId) {
@@ -725,9 +723,7 @@ export const storeRideAcceptedFromGateway = async (
         message: "Ride accepted and stored",
         data: { rideId },
       });
-    }
-
-    const riderId = externalRiderId as string;
+    }    const riderId = externalRiderId as string;
     await prisma.user.upsert({
       where: { id: riderId },
       create: {

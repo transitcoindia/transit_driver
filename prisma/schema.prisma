@@ -32,6 +32,7 @@ model User {
   resetTokenExpiresAt DateTime?
   isDriver            Boolean   @default(false)
   isAdmin             Boolean   @default(false)
+  fcmToken            String?
 
   sessions Session[]
   accounts Account[]

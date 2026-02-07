@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../../prismaClient";
 import AppError from "../../utils/AppError";
+import { sendFcmDataOnlyToRider } from "../../services/fcmService";
 
 /**
  * Get chat history for a ride
@@ -125,6 +126,22 @@ export const sendRideChatMessage = async (
         createdAt: true,
       },
     });
+
+    // Send data-only FCM so rider app can show notification with inline reply
+    if (ride.riderId) {
+      const preview = trimmed.length > 50 ? trimmed.slice(0, 47) + "..." : trimmed;
+      const driver = await prisma.driver.findUnique({
+        where: { id: driverId },
+        select: { name: true },
+      });
+      const senderName = driver?.name || "Driver";
+      sendFcmDataOnlyToRider(ride.riderId, {
+        type: "chat",
+        rideId,
+        text: preview,
+        senderName,
+      }).catch(() => {});
+    }
 
     return res.status(201).json({
       success: true,

@@ -1,2 +1,3 @@
 -- AlterTable
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "fcmToken" TEXT;
 ALTER TABLE "driver" ADD COLUMN IF NOT EXISTS "fcmToken" TEXT;
