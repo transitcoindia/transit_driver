@@ -118,13 +118,23 @@ exports.subscriptionActivateSchema = zod_1.z.object({
     amount: zod_1.z.number().positive("Amount must be positive").optional(),
     paymentMode: zod_1.z.string().min(1, "Payment mode is required"),
     transactionId: zod_1.z.string().optional(),
-    durationDays: zod_1.z.number().int().min(1).max(365).optional().default(30), // Default 30 days
-    includedMinutes: zod_1.z.number().int().min(1).optional(), // Optional quota in minutes
+    durationDays: zod_1.z.number().int().min(1).max(365).optional().default(30),
+    includedMinutes: zod_1.z.number().int().min(1).optional(),
+    razorpay_order_id: zod_1.z.string().optional(),
+    razorpay_payment_id: zod_1.z.string().optional(),
+    razorpay_signature: zod_1.z.string().optional(),
 }).refine(data => {
-    // Either we have a catalogue plan, or a raw amount
     return !!data.planId || typeof data.amount === 'number';
 }, {
     message: "Either planId or amount must be provided",
     path: ["planId"],
+}).refine(data => {
+    if (data.paymentMode === 'razorpay') {
+        return !!(data.razorpay_order_id && data.razorpay_payment_id && data.razorpay_signature);
+    }
+    return true;
+}, {
+    message: "Razorpay payment requires razorpay_order_id, razorpay_payment_id, razorpay_signature",
+    path: ["razorpay_order_id"],
 });
 //# sourceMappingURL=driverValidation.js.map

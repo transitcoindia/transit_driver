@@ -155,13 +155,16 @@ export declare const verificationTokenSchema: z.ZodObject<{
 }, {
     token: string;
 }>;
-export declare const subscriptionActivateSchema: z.ZodEffects<z.ZodObject<{
+export declare const subscriptionActivateSchema: z.ZodEffects<z.ZodEffects<z.ZodObject<{
     planId: z.ZodOptional<z.ZodString>;
     amount: z.ZodOptional<z.ZodNumber>;
     paymentMode: z.ZodString;
     transactionId: z.ZodOptional<z.ZodString>;
     durationDays: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
     includedMinutes: z.ZodOptional<z.ZodNumber>;
+    razorpay_order_id: z.ZodOptional<z.ZodString>;
+    razorpay_payment_id: z.ZodOptional<z.ZodString>;
+    razorpay_signature: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     paymentMode: string;
     durationDays: number;
@@ -169,6 +172,9 @@ export declare const subscriptionActivateSchema: z.ZodEffects<z.ZodObject<{
     amount?: number | undefined;
     planId?: string | undefined;
     includedMinutes?: number | undefined;
+    razorpay_order_id?: string | undefined;
+    razorpay_payment_id?: string | undefined;
+    razorpay_signature?: string | undefined;
 }, {
     paymentMode: string;
     transactionId?: string | undefined;
@@ -176,6 +182,9 @@ export declare const subscriptionActivateSchema: z.ZodEffects<z.ZodObject<{
     planId?: string | undefined;
     durationDays?: number | undefined;
     includedMinutes?: number | undefined;
+    razorpay_order_id?: string | undefined;
+    razorpay_payment_id?: string | undefined;
+    razorpay_signature?: string | undefined;
 }>, {
     paymentMode: string;
     durationDays: number;
@@ -183,6 +192,9 @@ export declare const subscriptionActivateSchema: z.ZodEffects<z.ZodObject<{
     amount?: number | undefined;
     planId?: string | undefined;
     includedMinutes?: number | undefined;
+    razorpay_order_id?: string | undefined;
+    razorpay_payment_id?: string | undefined;
+    razorpay_signature?: string | undefined;
 }, {
     paymentMode: string;
     transactionId?: string | undefined;
@@ -190,4 +202,27 @@ export declare const subscriptionActivateSchema: z.ZodEffects<z.ZodObject<{
     planId?: string | undefined;
     durationDays?: number | undefined;
     includedMinutes?: number | undefined;
+    razorpay_order_id?: string | undefined;
+    razorpay_payment_id?: string | undefined;
+    razorpay_signature?: string | undefined;
+}>, {
+    paymentMode: string;
+    durationDays: number;
+    transactionId?: string | undefined;
+    amount?: number | undefined;
+    planId?: string | undefined;
+    includedMinutes?: number | undefined;
+    razorpay_order_id?: string | undefined;
+    razorpay_payment_id?: string | undefined;
+    razorpay_signature?: string | undefined;
+}, {
+    paymentMode: string;
+    transactionId?: string | undefined;
+    amount?: number | undefined;
+    planId?: string | undefined;
+    durationDays?: number | undefined;
+    includedMinutes?: number | undefined;
+    razorpay_order_id?: string | undefined;
+    razorpay_payment_id?: string | undefined;
+    razorpay_signature?: string | undefined;
 }>;

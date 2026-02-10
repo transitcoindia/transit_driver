@@ -50,6 +50,7 @@ import {
 } from '../controllers/ride_controllers/rating';
 import {
     activateSubscription,
+    createSubscriptionOrder,
     getCurrentSubscription,
     getSubscriptionPlans,
 } from '../controllers/ride_controllers/subscription';
@@ -226,6 +227,7 @@ router.post('/internal/broadcast-ride-request', broadcastRideRequest as RequestH
 
 // Subscription routes (GET /subscription/plans is public so app can show catalogue without auth)
 router.get('/subscription/plans', getSubscriptionPlans as RequestHandler);
+router.post('/subscription/create-order', authenticate as RequestHandler, createSubscriptionOrder as RequestHandler);
 router.post('/subscription/activate', authenticate as RequestHandler, activateSubscription as RequestHandler);
 router.get('/subscription', authenticate as RequestHandler, getCurrentSubscription as RequestHandler);
 

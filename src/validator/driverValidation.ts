@@ -120,12 +120,22 @@ export const subscriptionActivateSchema = z.object({
     amount: z.number().positive("Amount must be positive").optional(),
     paymentMode: z.string().min(1, "Payment mode is required"),
     transactionId: z.string().optional(),
-    durationDays: z.number().int().min(1).max(365).optional().default(30), // Default 30 days
-    includedMinutes: z.number().int().min(1).optional(), // Optional quota in minutes
+    durationDays: z.number().int().min(1).max(365).optional().default(30),
+    includedMinutes: z.number().int().min(1).optional(),
+    razorpay_order_id: z.string().optional(),
+    razorpay_payment_id: z.string().optional(),
+    razorpay_signature: z.string().optional(),
 }).refine(data => {
-    // Either we have a catalogue plan, or a raw amount
     return !!data.planId || typeof data.amount === 'number';
 }, {
     message: "Either planId or amount must be provided",
     path: ["planId"],
+}).refine(data => {
+    if (data.paymentMode === 'razorpay') {
+        return !!(data.razorpay_order_id && data.razorpay_payment_id && data.razorpay_signature);
+    }
+    return true;
+}, {
+    message: "Razorpay payment requires razorpay_order_id, razorpay_payment_id, razorpay_signature",
+    path: ["razorpay_order_id"],
 }); 

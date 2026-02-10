@@ -166,6 +166,7 @@ router.post('/availability/heartbeat', authMiddle_1.authenticate, location_1.dri
 router.post('/internal/broadcast-ride-request', broadcastRideRequest_1.broadcastRideRequest);
 // Subscription routes (GET /subscription/plans is public so app can show catalogue without auth)
 router.get('/subscription/plans', subscription_1.getSubscriptionPlans);
+router.post('/subscription/create-order', authMiddle_1.authenticate, subscription_1.createSubscriptionOrder);
 router.post('/subscription/activate', authMiddle_1.authenticate, subscription_1.activateSubscription);
 router.get('/subscription', authMiddle_1.authenticate, subscription_1.getCurrentSubscription);
 // Admin routes for driver management

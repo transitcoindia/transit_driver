@@ -1,8 +1,17 @@
 import { Request, Response, NextFunction } from "express";
+import Razorpay from "razorpay";
+import crypto from "crypto";
 import { prisma } from "../../prismaClient";
 import AppError from "../../utils/AppError";
 import { subscriptionActivateSchema } from "../../validator/driverValidation";
 import { Prisma } from "@prisma/client";
+
+const razorpay = process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET
+  ? new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    })
+  : null;
 
 type VehiclePlanType = "BIKE" | "AUTO" | "CAR";
 
@@ -41,6 +50,73 @@ const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   { id: "car_monthly_12h", vehicleType: "CAR", label: "Car Monthly 30x12h", price: 1299, durationDays: 30, includedMinutes: 30 * 12 * 60 },
   { id: "car_monthly_unlimited", vehicleType: "CAR", label: "Car Monthly Unlimited", price: 1699, durationDays: 30, includedMinutes: null },
 ];
+
+/**
+ * Create Razorpay order for subscription payment
+ * POST /api/driver/subscription/create-order
+ * Body: { planId: string }
+ */
+export const createSubscriptionOrder = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    if (!razorpay) {
+      return res.status(503).json({
+        success: false,
+        error: "Razorpay is not configured on the server",
+      });
+    }
+    if (!req.driver?.id) {
+      return res.status(401).json({ success: false, message: "Not authenticated" });
+    }
+    const { planId } = req.body || {};
+    if (!planId) {
+      return res.status(400).json({ success: false, error: "planId is required" });
+    }
+    const plan = SUBSCRIPTION_PLANS.find((p) => p.id === planId);
+    if (!plan) {
+      return res.status(400).json({ success: false, error: "Invalid plan" });
+    }
+    const driverId = req.driver.id;
+    const vehicle = await prisma.vehicle.findUnique({
+      where: { driverId },
+      select: { vehicleType: true, model: true },
+    });
+    if (!vehicle) {
+      return res.status(400).json({
+        success: false,
+        error: "Complete vehicle details before buying a plan",
+      });
+    }
+    const driverVehicleType = normalizeVehicleType(vehicle.vehicleType || vehicle.model || null);
+    if (!driverVehicleType || driverVehicleType !== plan.vehicleType) {
+      return res.status(400).json({
+        success: false,
+        error: `This plan is only for ${plan.vehicleType.toLowerCase()} drivers`,
+      });
+    }
+    const order = await razorpay.orders.create({
+      amount: Math.round(plan.price * 100),
+      currency: "INR",
+      receipt: `sub_${driverId.slice(0, 8)}_${Date.now()}`,
+      notes: { planId, driverId },
+    });
+    return res.status(200).json({
+      success: true,
+      data: {
+        orderId: order.id,
+        amount: plan.price,
+        currency: "INR",
+        keyId: process.env.RAZORPAY_KEY_ID,
+      },
+    });
+  } catch (error) {
+    console.error("Error creating subscription order:", error);
+    return next(new AppError("Failed to create payment order", 500));
+  }
+};
 
 /**
  * Get subscription plans catalogue
@@ -139,7 +215,31 @@ export const activateSubscription = async (
 
     // Validate request body
     const validatedData = subscriptionActivateSchema.parse(req.body);
-    const { planId, amount, paymentMode, transactionId, durationDays, includedMinutes } = validatedData;
+    const {
+      planId,
+      amount,
+      paymentMode,
+      transactionId,
+      durationDays,
+      includedMinutes,
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+    } = validatedData as any;
+
+    if (paymentMode === "razorpay" && razorpay_order_id && razorpay_payment_id && razorpay_signature) {
+      if (!razorpay) {
+        return next(new AppError("Razorpay is not configured on the server", 503));
+      }
+      const sigBody = razorpay_order_id + "|" + razorpay_payment_id;
+      const expectedSig = crypto
+        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET!)
+        .update(sigBody)
+        .digest("hex");
+      if (expectedSig !== razorpay_signature) {
+        return next(new AppError("Invalid Razorpay payment signature", 400));
+      }
+    }
 
     // Check if driver exists
     const driver = await prisma.driver.findUnique({
@@ -204,13 +304,16 @@ export const activateSubscription = async (
     // Use transaction to create both payment and subscription records
     const result = await prisma.$transaction(async (tx) => {
       // Create subscription payment record
+      const txId = paymentMode === "razorpay" && razorpay_payment_id
+        ? razorpay_payment_id
+        : transactionId;
       const payment = await tx.subscriptionPayment.create({
         data: {
           driverId: driverId,
           amount: effectiveAmount,
           paymentMode: paymentMode,
-          transactionId: transactionId || null,
-          status: transactionId ? "SUCCESS" : "PENDING", // If transactionId provided, assume SUCCESS
+          transactionId: txId || null,
+          status: txId ? "SUCCESS" : "PENDING",
         },
       });
 
