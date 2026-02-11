@@ -17,6 +17,7 @@ const payment_1 = require("../controllers/ride_controllers/payment");
 const rating_1 = require("../controllers/ride_controllers/rating");
 const subscription_1 = require("../controllers/ride_controllers/subscription");
 const profile_1 = require("../controllers/auth_controllers/profile");
+const emergency_1 = require("../controllers/auth_controllers/emergency");
 const fcmToken_1 = require("../controllers/auth_controllers/fcmToken");
 const documents_1 = require("../controllers/auth_controllers/documents");
 const authMiddle_1 = require("../middleware/authMiddle");
@@ -129,6 +130,12 @@ router.post('/profile/request-phone-otp', authMiddle_1.authenticate, authControl
 router.post('/profile/verify-phone-otp', authMiddle_1.authenticate, authControllers_1.verifyProfilePhoneOtp);
 router.post('/profile/image', authMiddle_1.authenticate, profileImageUpload, profile_1.uploadDriverProfileImage);
 router.post('/profile/verification-selfie', authMiddle_1.authenticate, verificationSelfieUpload, profile_1.uploadVerificationSelfie);
+// Emergency contacts (driver profile)
+router.get('/emergency/contacts', authMiddle_1.authenticate, emergency_1.getEmergencyContacts);
+router.post('/emergency/contacts', authMiddle_1.authenticate, emergency_1.addEmergencyContact);
+router.put('/emergency/contacts/:contactId', authMiddle_1.authenticate, emergency_1.updateEmergencyContact);
+router.delete('/emergency/contacts/:contactId', authMiddle_1.authenticate, emergency_1.deleteEmergencyContact);
+router.post('/emergency/sos', authMiddle_1.authenticate, emergency_1.triggerSos);
 router.get('/documents/status', authMiddle_1.authenticate, documents_1.getDocumentStatus);
 router.get('/documents/vehicleImages', authMiddle_1.authenticate, documents_1.getVehicleImages);
 router.post('/documents/vehicleImages', authMiddle_1.authenticate, vehicleImageUpload, documents_1.uploadVehicleImages);
