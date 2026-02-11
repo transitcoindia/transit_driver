@@ -244,10 +244,26 @@ model Driver {
   payments       Payment[]
   rideRequests   DriverRideRequests[]
   assignedRides  RideRequest[]        @relation("AssignedDriver")
+  emergencyContacts DriverEmergencyContact[]
 
   // Indexes for better query performance
   @@index([userId])
   @@map("driver")
+}
+
+// Emergency contacts for drivers (SOS and safety)
+model DriverEmergencyContact {
+  id            String    @id @default(cuid())
+  name          String
+  phoneNumber   String
+  relationship  String?   // "family", "friend", "other"
+  driverId      String
+  driver        Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([driverId])
+  @@map("driver_emergency_contact")
 }
 
 model DriverDocument {

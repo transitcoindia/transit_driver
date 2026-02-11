@@ -55,6 +55,13 @@ import {
     getSubscriptionPlans,
 } from '../controllers/ride_controllers/subscription';
 import { updateDriverProfile, uploadDriverProfileImage, uploadVerificationSelfie } from '../controllers/auth_controllers/profile';
+import {
+  addEmergencyContact,
+  getEmergencyContacts,
+  updateEmergencyContact,
+  deleteEmergencyContact,
+  triggerSos,
+} from '../controllers/auth_controllers/emergency';
 import { registerFcmToken } from '../controllers/auth_controllers/fcmToken';
 import { getDocumentStatus, getVehicleImages, uploadDocuments, createOrUpdateVehicleInfo, uploadVehicleImages } from '../controllers/auth_controllers/documents';
 import { authenticate, authenticateAdmin } from '../middleware/authMiddle';
@@ -182,6 +189,14 @@ router.post('/profile/request-phone-otp', authenticate as RequestHandler, reques
 router.post('/profile/verify-phone-otp', authenticate as RequestHandler, verifyProfilePhoneOtp as RequestHandler);
 router.post('/profile/image', authenticate as RequestHandler, profileImageUpload as any, uploadDriverProfileImage as RequestHandler);
 router.post('/profile/verification-selfie', authenticate as RequestHandler, verificationSelfieUpload as any, uploadVerificationSelfie as RequestHandler);
+
+// Emergency contacts (driver profile)
+router.get('/emergency/contacts', authenticate as RequestHandler, getEmergencyContacts as RequestHandler);
+router.post('/emergency/contacts', authenticate as RequestHandler, addEmergencyContact as RequestHandler);
+router.put('/emergency/contacts/:contactId', authenticate as RequestHandler, updateEmergencyContact as RequestHandler);
+router.delete('/emergency/contacts/:contactId', authenticate as RequestHandler, deleteEmergencyContact as RequestHandler);
+router.post('/emergency/sos', authenticate as RequestHandler, triggerSos as RequestHandler);
+
 router.get('/documents/status', authenticate as RequestHandler, getDocumentStatus as RequestHandler);
 router.get('/documents/vehicleImages', authenticate as RequestHandler, getVehicleImages as RequestHandler);
 router.post('/documents/vehicleImages', authenticate as RequestHandler, vehicleImageUpload as any, uploadVehicleImages as RequestHandler);
