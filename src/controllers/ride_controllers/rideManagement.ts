@@ -91,13 +91,21 @@ export const acceptRide = async (
     // Generate ride OTP (4-digit code for security - no expiration)
     const rideOtp = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit OTP
 
-    // Update ride: mark accepted, attach driverId if missing, generate OTP
+    // Resolve vehicleId: fetch driver's active vehicle
+    const driverVehicle = await prisma.vehicle.findUnique({
+      where: { driverId },
+      select: { id: true },
+    });
+    const vehicleId = driverVehicle?.id ?? undefined;
+
+    // Update ride: mark accepted, attach driverId, vehicleId, generate OTP
     const updatedRide = await prisma.ride.update({
       where: { id: rideId },
       data: {
         status: "accepted",
         rideOtp: rideOtp,
         driverId: driverId,
+        vehicleId: vehicleId ?? undefined,
         updatedAt: new Date(),
       },
       select: {
@@ -697,6 +705,16 @@ export const storeRideAcceptedFromGateway = async (
       select: { id: true, driverId: true, status: true },
     });
 
+    // Resolve vehicleId: use payload if provided, else fetch driver's active vehicle
+    let vehicleId = body.vehicleId as string | undefined;
+    if (!vehicleId && driverId) {
+      const driverVehicle = await prisma.vehicle.findUnique({
+        where: { driverId },
+        select: { id: true },
+      });
+      vehicleId = driverVehicle?.id ?? undefined;
+    }
+
     if (existingRide) {
       if (existingRide.driverId && existingRide.driverId !== driverId) {
         return res.status(200).json({
@@ -709,6 +727,7 @@ export const storeRideAcceptedFromGateway = async (
         data: {
           status: status || "accepted",
           driverId,
+          vehicleId: vehicleId ?? undefined,
           rideOtp: rideOtp ?? undefined,
           estimatedFare: estimatedFare ?? undefined,
           estimatedDistance: estimatedDistance ?? undefined,
@@ -754,6 +773,7 @@ export const storeRideAcceptedFromGateway = async (
         dropAddress: dropAddress ?? undefined,
         riderId,
         driverId,
+        vehicleId: vehicleId ?? undefined,
         rideOtp: rideOtp ?? undefined,
         estimatedFare: estimatedFare != null ? Number(estimatedFare) : undefined,
         estimatedDistance: estimatedDistance != null ? Number(estimatedDistance) : undefined,
