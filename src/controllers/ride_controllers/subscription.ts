@@ -97,17 +97,55 @@ export const createSubscriptionOrder = async (
         error: `This plan is only for ${plan.vehicleType.toLowerCase()} drivers`,
       });
     }
-    const order = await razorpay.orders.create({
-      amount: Math.round(plan.price * 100),
-      currency: "INR",
-      receipt: `sub_${driverId.slice(0, 8)}_${Date.now()}`,
-      notes: { planId, driverId },
-    });
+
+    // Apply overtime billing if subscription expired (so wallet is up-to-date)
+    try {
+      const { applyOvertimeBilling } = await import("../../services/overtimeBillingService");
+      await applyOvertimeBilling(driverId);
+    } catch (_) {}
+
+    // Apply wallet balance toward subscription (wallet can be negative – recovery added to amount)
+    let wallet = await prisma.driverWallet.findUnique({ where: { driverId } });
+    if (!wallet) {
+      wallet = await prisma.driverWallet.create({ data: { driverId } });
+    }
+    const negativeRecovery = wallet.balance < 0 ? Math.abs(wallet.balance) : 0;
+    const walletAmountUsed = wallet.balance > 0 ? Math.min(wallet.balance, plan.price) : 0;
+    const amountToPay = Math.max(0, plan.price - walletAmountUsed + negativeRecovery);
+
+    if (amountToPay > 0) {
+      const order = await razorpay.orders.create({
+        amount: Math.round(amountToPay * 100),
+        currency: "INR",
+        receipt: `sub_${driverId.slice(0, 8)}_${Date.now()}`,
+        notes: { planId, driverId },
+      });
+      return res.status(200).json({
+        success: true,
+        data: {
+          orderId: order.id,
+          amount: amountToPay,
+          planPrice: plan.price,
+          walletBalance: wallet.balance,
+          walletAmountUsed,
+          negativeRecovery,
+          currency: "INR",
+          keyId: process.env.RAZORPAY_KEY_ID,
+        },
+      });
+    }
+
+    // Full amount covered by wallet - no Razorpay needed
     return res.status(200).json({
       success: true,
       data: {
-        orderId: order.id,
-        amount: plan.price,
+        orderId: null,
+        amount: 0,
+        planPrice: plan.price,
+        walletBalance: wallet.balance,
+        walletAmountUsed: plan.price,
+        negativeRecovery: negativeRecovery || 0,
+        payWithWalletOnly: true,
         currency: "INR",
         keyId: process.env.RAZORPAY_KEY_ID,
       },
@@ -241,13 +279,20 @@ export const activateSubscription = async (
       }
     }
 
-    // Check if driver exists
+    // Check if driver exists (include referral relation for bonus crediting)
     const driver = await prisma.driver.findUnique({
       where: { id: driverId },
+      select: { id: true, referredByDriverId: true },
     });
 
     if (!driver) {
       return next(new AppError("Driver not found", 404));
+    }
+
+    // Get or create driver wallet for applying balance
+    let wallet = await prisma.driverWallet.findUnique({ where: { driverId } });
+    if (!wallet) {
+      wallet = await prisma.driverWallet.create({ data: { driverId } });
     }
 
     // If a catalogue plan is provided, derive amount/duration/minutes from it
@@ -296,13 +341,26 @@ export const activateSubscription = async (
       appliedPlan = plan;
     }
 
+    // Apply wallet: deduct min(balance, plan price) toward subscription (balance can be negative – recovery handled)
+    const walletRecovery = wallet.balance < 0 ? Math.abs(wallet.balance) : 0;
+    const walletAmountUsed = wallet.balance > 0 ? Math.min(wallet.balance, effectiveAmount) : 0;
+    if (walletAmountUsed > 0 && walletAmountUsed > wallet.balance) {
+      return next(new AppError("Insufficient wallet balance", 400));
+    }
+
     // Calculate subscription dates
     const startTime = new Date();
     const expire = new Date(startTime);
     expire.setDate(expire.getDate() + effectiveDurationDays);
 
+    const REFERRER_BONUS = 50;
+    const REFEREE_BONUS = 20;
+
     // Use transaction to create both payment and subscription records
     const result = await prisma.$transaction(async (tx) => {
+      if (!wallet) throw new AppError("Wallet not found", 500);
+      let w = wallet;
+
       // Create subscription payment record
       const txId = paymentMode === "razorpay" && razorpay_payment_id
         ? razorpay_payment_id
@@ -311,11 +369,122 @@ export const activateSubscription = async (
         data: {
           driverId: driverId,
           amount: effectiveAmount,
+          walletAmountUsed,
           paymentMode: paymentMode,
           transactionId: txId || null,
-          status: txId ? "SUCCESS" : "PENDING",
+          status: txId || paymentMode === "wallet" ? "SUCCESS" : "PENDING",
         },
       });
+
+      // Recover negative wallet first (payment includes recovery amount)
+      if (walletRecovery > 0) {
+        const balanceBefore = w.balance;
+        const balanceAfter = balanceBefore + walletRecovery; // -50 + 50 = 0
+        await tx.driverWallet.update({
+          where: { id: w.id },
+          data: { balance: balanceAfter, updatedAt: new Date() },
+        });
+        await tx.driverWalletTransaction.create({
+          data: {
+            driverWalletId: w.id,
+            type: "credit",
+            amount: walletRecovery,
+            balanceBefore,
+            balanceAfter,
+            description: "Wallet recovery (cleared negative balance on recharge)",
+            referenceType: "subscription",
+            referenceId: payment.id,
+          },
+        });
+        // Update wallet ref for referral logic (balance is now 0 after recovery)
+        const updated = await tx.driverWallet.findUnique({ where: { id: w.id } });
+        if (updated) w = updated;
+      }
+      // Deduct from wallet if used (positive balance)
+      if (walletAmountUsed > 0) {
+        const balanceBefore = w.balance;
+        const balanceAfter = balanceBefore - walletAmountUsed;
+        await tx.driverWallet.update({
+          where: { id: w.id },
+          data: { balance: balanceAfter, updatedAt: new Date() },
+        });
+        await tx.driverWalletTransaction.create({
+          data: {
+            driverWalletId: w.id,
+            type: "debit",
+            amount: walletAmountUsed,
+            balanceBefore,
+            balanceAfter,
+            description: "Subscription payment",
+            referenceType: "subscription",
+            referenceId: payment.id,
+          },
+        });
+      }
+
+      // Referral bonus: ₹50 to referrer, ₹20 to referee on first subscription
+      if (driver.referredByDriverId) {
+        const existing = await tx.referralCredit.findUnique({
+          where: { refereeDriverId: driverId },
+        });
+        if (!existing) {
+          // Credit referrer (₹50)
+          let referrerWallet = await tx.driverWallet.findUnique({
+            where: { driverId: driver.referredByDriverId },
+          });
+          if (!referrerWallet) {
+            referrerWallet = await tx.driverWallet.create({
+              data: { driverId: driver.referredByDriverId },
+            });
+          }
+          const rBalBefore = referrerWallet.balance;
+          const rBalAfter = rBalBefore + REFERRER_BONUS;
+          await tx.driverWallet.update({
+            where: { id: referrerWallet.id },
+            data: { balance: rBalAfter, updatedAt: new Date() },
+          });
+          await tx.driverWalletTransaction.create({
+            data: {
+              driverWalletId: referrerWallet.id,
+              type: "credit",
+              amount: REFERRER_BONUS,
+              balanceBefore: rBalBefore,
+              balanceAfter: rBalAfter,
+              description: "Referral bonus (referrer)",
+              referenceType: "referral_referrer",
+              referenceId: payment.id,
+            },
+          });
+
+          // Credit referee/buyer (₹20) - balance after subscription debit
+          const bBalBefore = w.balance - walletAmountUsed;
+          const bBalAfter = bBalBefore + REFEREE_BONUS;
+          await tx.driverWallet.update({
+            where: { id: w.id },
+            data: { balance: { increment: REFEREE_BONUS }, updatedAt: new Date() },
+          });
+          await tx.driverWalletTransaction.create({
+            data: {
+              driverWalletId: w.id,
+              type: "credit",
+              amount: REFEREE_BONUS,
+              balanceBefore: bBalBefore,
+              balanceAfter: bBalAfter,
+              description: "Referral bonus (joined via referral)",
+              referenceType: "referral_referee",
+              referenceId: payment.id,
+            },
+          });
+
+          await tx.referralCredit.create({
+            data: {
+              refereeDriverId: driverId,
+              referrerDriverId: driver.referredByDriverId,
+              subscriptionPaymentId: payment.id,
+            },
+          });
+        }
+      }
 
       // Cancel any existing active subscriptions (only one active at a time)
       await tx.driverSubscription.updateMany({
@@ -329,7 +498,6 @@ export const activateSubscription = async (
       });
 
       // Per-day allowance: fixed window (midnight–midnight), continuous from first online that day.
-      // Daily plan: dailyAllowanceMinutes = includedMinutes. Multi-day: includedMinutes / durationDays. Unlimited: null.
       const dailyAllowanceMinutes =
         effectiveIncludedMinutes != null && effectiveDurationDays != null
           ? effectiveDurationDays === 1
@@ -425,6 +593,12 @@ export const getCurrentSubscription = async (
 
     const driverId = req.driver.id as string;
 
+    // Apply overtime billing if subscription expired (so wallet is up-to-date when they recharge)
+    try {
+      const { applyOvertimeBilling } = await import("../../services/overtimeBillingService");
+      await applyOvertimeBilling(driverId);
+    } catch (_) {}
+
     // Get active subscription
     const subscription = await prisma.driverSubscription.findFirst({
       where: {
@@ -457,19 +631,23 @@ export const getCurrentSubscription = async (
     // Check if subscription has expired
     const now = new Date();
     if (subscription.expire < now && subscription.status === "ACTIVE") {
-      // Update expired subscription
       await prisma.driverSubscription.update({
         where: { id: subscription.id },
         data: { status: "EXPIRED" },
       });
 
+      const { isInGracePeriod } = await import("../../services/overtimeBillingService");
+      const grace = await isInGracePeriod(driverId);
+
       return res.status(200).json({
         success: true,
-        message: "Subscription has expired",
+        message: grace?.inGrace ? "Subscription expired; 4-hour grace period active" : "Subscription has expired",
         data: {
           subscription: {
             ...subscription,
             status: "EXPIRED",
+            inGracePeriod: grace?.inGrace ?? false,
+            graceHoursRemaining: grace?.graceHoursRemaining ?? 0,
           },
         },
       });

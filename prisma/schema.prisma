@@ -237,6 +237,12 @@ model Driver {
   rides                Ride[]
   vehicle              Vehicle[]
 
+  // Referral fields
+  referralCode       String?   @unique // Unique code for sharing (e.g. DRV-XXXX)
+  referredByDriverId String?
+  referredByDriver   Driver?   @relation("DriverReferral", fields: [referredByDriverId], references: [id])
+  referredDrivers    Driver[]  @relation("DriverReferral")
+
   // Relations from transit_driver
   driverDetails  DriverDetails?
   driverLocation DriverLocation?
@@ -245,6 +251,7 @@ model Driver {
   rideRequests   DriverRideRequests[]
   assignedRides  RideRequest[]        @relation("AssignedDriver")
   emergencyContacts DriverEmergencyContact[]
+  driverWallet   DriverWallet?
 
   // Indexes for better query performance
   @@index([userId])
@@ -306,6 +313,9 @@ model DriverSubscription {
   // Per-day cap (minutes). Continuous countdown from first online that day. null = no daily cap.
   dailyAllowanceMinutes Int?
 
+  // Overtime billing: when subscription expires, we charge ₹10/hr. Last time we applied overtime charge.
+  lastOvertimeBillingAt DateTime?
+
   @@index([driverId])
   @@index([status, expire])
 }
@@ -321,13 +331,59 @@ model SubscriptionPayment {
   id              String   @id @default(cuid())
   driverId        String
   driver          Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  amount          Float
+  amount          Float    // Full subscription price
+  walletAmountUsed Float   @default(0) // Amount deducted from driver wallet
   paymentMode     String
   transactionId   String?  
   status          String   // SUCCESS, FAILED, PENDING
   createdAt       DateTime @default(now())
   
   @@index([driverId])
+}
+
+// Driver wallet for subscription discounts and referral credits
+model DriverWallet {
+  id        String   @id @default(cuid())
+  driverId  String   @unique
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  balance   Float    @default(0)
+  currency  String   @default("INR")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions DriverWalletTransaction[]
+
+  @@map("driver_wallet")
+}
+
+// Driver wallet transaction history
+model DriverWalletTransaction {
+  id             String   @id @default(cuid())
+  driverWalletId String
+  driverWallet   DriverWallet @relation(fields: [driverWalletId], references: [id], onDelete: Cascade)
+  type           String   // "credit" | "debit"
+  amount         Float
+  balanceBefore  Float
+  balanceAfter   Float
+  description    String?
+  referenceType  String?  // "referral_referrer" | "referral_referee" | "subscription"
+  referenceId    String?  // e.g. subscriptionPaymentId, referralCreditId
+  createdAt      DateTime @default(now())
+
+  @@index([driverWalletId, createdAt])
+  @@map("driver_wallet_transaction")
+}
+
+// Tracks that referral credit was given for a referee's first subscription (avoid double credit)
+model ReferralCredit {
+  id                 String   @id @default(cuid())
+  refereeDriverId    String   // Driver who bought subscription
+  referrerDriverId   String   // Driver who referred them
+  subscriptionPaymentId String
+  createdAt          DateTime @default(now())
+
+  @@unique([refereeDriverId])
+  @@map("referral_credit")
 }
 
 model Fare {
@@ -764,6 +820,8 @@ model DriverStatus {
   totalOnlineHours Float            @default(0)
   // First time driver went online this calendar day (UTC). Used for continuous daily allowance countdown.
   firstOnlineAtToday DateTime?
+  // When current online session started. Auto-offline after 12h for safety.
+  sessionStartedAt   DateTime?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 

@@ -16,6 +16,7 @@ const otpService_1 = require("../../utils/otpService");
 const google_auth_library_1 = require("google-auth-library");
 const date_fns_1 = require("date-fns");
 const generateUserId_1 = require("../../utils/generateUserId");
+const generateReferralCode_1 = require("../../utils/generateReferralCode");
 const client = new google_auth_library_1.OAuth2Client(process.env.GOOGLE_CLIENT_ID, undefined, // Client Secret is not used for 'postmessage' type
 'postmessage' // This is required for mobile apps
 );
@@ -25,9 +26,10 @@ const generateOTP = () => {
 const register = async (req, res, next) => {
     try {
         const validatedData = driverValidation_1.driverSignupSchema.parse(req.body);
-        let { email, firstName, lastName, phoneNumber } = validatedData;
+        let { email, firstName, lastName, phoneNumber, referralCode } = validatedData;
         email = (email && email.trim()) || undefined;
         phoneNumber = (phoneNumber && phoneNumber.replace(/\D/g, "").slice(-10)) || undefined;
+        const refCode = referralCode && String(referralCode).trim().toUpperCase() ? String(referralCode).trim().toUpperCase() : null;
         if (!email && !phoneNumber) {
             return next(new AppError_1.default('At least one of email or phone number is required', 400));
         }
@@ -46,6 +48,14 @@ const register = async (req, res, next) => {
         }
         const hashedPassword = await bcrypt_1.default.hash((0, crypto_1.randomBytes)(32).toString('hex'), 10);
         const customId = await (0, generateUserId_1.generateUserId)(prismaClient_1.prisma, false, true);
+        // Resolve referrer by referral code (if provided)
+        let referredByDriverId = null;
+        if (refCode) {
+            const referrer = await prismaClient_1.prisma.driver.findFirst({ where: { referralCode: refCode }, select: { id: true } });
+            if (referrer)
+                referredByDriverId = referrer.id;
+        }
+        const newReferralCode = await (0, generateReferralCode_1.generateReferralCode)(prismaClient_1.prisma);
         const user = await prismaClient_1.prisma.user.create({
             data: {
                 id: customId,
@@ -64,6 +74,8 @@ const register = async (req, res, next) => {
             data: {
                 userId: user.id,
                 name: `${firstName} ${lastName}`,
+                referralCode: newReferralCode,
+                referredByDriverId,
                 createdAt: new Date(),
                 updatedAt: new Date(),
             },

@@ -62,6 +62,50 @@ export async function sendFcmDataOnlyToRider(
   }
 }
 
+/** Send FCM notification to driver (Driver model has fcmToken). */
+export async function sendFcmToDriver(
+  driverId: string,
+  notification: FcmNotification
+): Promise<boolean> {
+  if (!initFirebase()) return false;
+  try {
+    const driver = await prisma.driver.findUnique({
+      where: { id: driverId },
+      select: { fcmToken: true },
+    });
+    const token = driver?.fcmToken;
+    if (!token) return false;
+    await admin.messaging().send({
+      token,
+      notification: {
+        title: notification.title,
+        body: notification.body,
+      },
+      data: notification.data
+        ? Object.fromEntries(
+            Object.entries(notification.data).map(([k, v]) => [k, String(v)])
+          )
+        : undefined,
+      android: {
+        priority: "high",
+        notification: { channelId: "subscription_updates" },
+      },
+    });
+    return true;
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (
+      err?.code === "messaging/invalid-registration-token" ||
+      err?.code === "messaging/registration-token-not-registered"
+    ) {
+      console.warn("FCM invalid driver token:", driverId?.slice(0, 8) + "...");
+    } else {
+      console.error("FCM send to driver error:", err?.message || e);
+    }
+    return false;
+  }
+}
+
 export async function sendFcmToRider(
   riderId: string,
   notification: FcmNotification

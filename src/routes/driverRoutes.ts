@@ -54,6 +54,8 @@ import {
     getCurrentSubscription,
     getSubscriptionPlans,
 } from '../controllers/ride_controllers/subscription';
+import { getWalletBalance, getWalletTransactions } from '../controllers/ride_controllers/wallet';
+import { getReferralInfo } from '../controllers/ride_controllers/referral';
 import { updateDriverProfile, uploadDriverProfileImage, uploadVerificationSelfie } from '../controllers/auth_controllers/profile';
 import {
   addEmergencyContact,
@@ -245,6 +247,13 @@ router.get('/subscription/plans', getSubscriptionPlans as RequestHandler);
 router.post('/subscription/create-order', authenticate as RequestHandler, createSubscriptionOrder as RequestHandler);
 router.post('/subscription/activate', authenticate as RequestHandler, activateSubscription as RequestHandler);
 router.get('/subscription', authenticate as RequestHandler, getCurrentSubscription as RequestHandler);
+
+// Wallet routes
+router.get('/wallet', authenticate as RequestHandler, getWalletBalance as RequestHandler);
+router.get('/wallet/transactions', authenticate as RequestHandler, getWalletTransactions as RequestHandler);
+
+// Referral routes
+router.get('/referral', authenticate as RequestHandler, getReferralInfo as RequestHandler);
 
 // Admin routes for driver management
 router.get('/admin/list', authenticateAdmin as RequestHandler, getAllDrivers as RequestHandler);

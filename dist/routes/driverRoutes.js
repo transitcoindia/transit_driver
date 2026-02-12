@@ -16,6 +16,8 @@ const location_1 = require("../controllers/ride_controllers/location");
 const payment_1 = require("../controllers/ride_controllers/payment");
 const rating_1 = require("../controllers/ride_controllers/rating");
 const subscription_1 = require("../controllers/ride_controllers/subscription");
+const wallet_1 = require("../controllers/ride_controllers/wallet");
+const referral_1 = require("../controllers/ride_controllers/referral");
 const profile_1 = require("../controllers/auth_controllers/profile");
 const emergency_1 = require("../controllers/auth_controllers/emergency");
 const fcmToken_1 = require("../controllers/auth_controllers/fcmToken");
@@ -176,6 +178,11 @@ router.get('/subscription/plans', subscription_1.getSubscriptionPlans);
 router.post('/subscription/create-order', authMiddle_1.authenticate, subscription_1.createSubscriptionOrder);
 router.post('/subscription/activate', authMiddle_1.authenticate, subscription_1.activateSubscription);
 router.get('/subscription', authMiddle_1.authenticate, subscription_1.getCurrentSubscription);
+// Wallet routes
+router.get('/wallet', authMiddle_1.authenticate, wallet_1.getWalletBalance);
+router.get('/wallet/transactions', authMiddle_1.authenticate, wallet_1.getWalletTransactions);
+// Referral routes
+router.get('/referral', authMiddle_1.authenticate, referral_1.getReferralInfo);
 // Admin routes for driver management
 router.get('/admin/list', authMiddle_1.authenticateAdmin, driverAdmin_1.getAllDrivers);
 router.put('/admin/approve/:driverId', authMiddle_1.authenticateAdmin, driverAdmin_1.approveDriver);

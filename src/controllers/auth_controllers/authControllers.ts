@@ -12,6 +12,7 @@ import { sendOtp } from '../../utils/otpService';
 import { OAuth2Client } from 'google-auth-library';
 import { addHours, isAfter } from 'date-fns';
 import { generateUserId } from '../../utils/generateUserId';
+import { generateReferralCode } from '../../utils/generateReferralCode';
 
 const client = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
@@ -25,9 +26,10 @@ const generateOTP = () => {
 export const register = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const validatedData = driverSignupSchema.parse(req.body);
-        let { email, firstName, lastName, phoneNumber } = validatedData;
+        let { email, firstName, lastName, phoneNumber, referralCode } = validatedData;
         email = (email && email.trim()) || undefined;
         phoneNumber = (phoneNumber && phoneNumber.replace(/\D/g, "").slice(-10)) || undefined;
+        const refCode = referralCode && String(referralCode).trim().toUpperCase() ? String(referralCode).trim().toUpperCase() : null;
 
         if (!email && !phoneNumber) {
             return next(new AppError('At least one of email or phone number is required', 400));
@@ -51,6 +53,15 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
         const hashedPassword = await bcrypt.hash(randomBytes(32).toString('hex'), 10);
         const customId = await generateUserId(prisma, false, true);
 
+        // Resolve referrer by referral code (if provided)
+        let referredByDriverId: string | null = null;
+        if (refCode) {
+            const referrer = await prisma.driver.findFirst({ where: { referralCode: refCode }, select: { id: true } });
+            if (referrer) referredByDriverId = referrer.id;
+        }
+
+        const newReferralCode = await generateReferralCode(prisma);
+
         const user = await prisma.user.create({
             data: {
                 id: customId,
@@ -70,6 +81,8 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
             data: {
                 userId: user.id,
                 name: `${firstName} ${lastName}`,
+                referralCode: newReferralCode,
+                referredByDriverId,
                 createdAt: new Date(),
                 updatedAt: new Date(),
             },

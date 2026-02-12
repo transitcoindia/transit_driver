@@ -12,6 +12,7 @@ export const driverSignupSchema = z.object({
         .refine((phone) => !phone || phone.replace(/\D/g, "").length < 10 || isValidPhoneNumber("+91" + phone.replace(/\D/g, "").slice(-10)), {
             message: "Invalid phone number",
         }),
+    referralCode: z.string().min(1).max(20).optional(),
 }).refine((data) => {
     const hasEmail = data.email && String(data.email).trim().length > 0;
     const hasPhone = data.phoneNumber && String(data.phoneNumber).replace(/\D/g, "").length >= 10;
@@ -133,6 +134,9 @@ export const subscriptionActivateSchema = z.object({
 }).refine(data => {
     if (data.paymentMode === 'razorpay') {
         return !!(data.razorpay_order_id && data.razorpay_payment_id && data.razorpay_signature);
+    }
+    if (data.paymentMode === 'wallet') {
+        return true; // No Razorpay fields needed when paying with wallet only
     }
     return true;
 }, {

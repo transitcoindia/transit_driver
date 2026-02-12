@@ -189,7 +189,7 @@ export const toggleDriverAvailability = async (
       });
     }
 
-    // Enforce active subscription and daily allowance (continuous from first online today) when going ONLINE
+    // Enforce active subscription (or grace period) and daily allowance when going ONLINE
     if (isAvailable) {
       const now = new Date();
       const activeSub = await prisma.driverSubscription.findFirst({
@@ -201,12 +201,17 @@ export const toggleDriverAvailability = async (
         orderBy: { createdAt: "desc" },
       });
 
-      if (!activeSub) {
+      const { isInGracePeriod } = await import("../../services/overtimeBillingService");
+      const grace = await isInGracePeriod(driverId);
+
+      if (!activeSub && !grace?.inGrace) {
         return res.status(403).json({
           success: false,
           error: "Active subscription required to go online",
         });
       }
+
+      const subForAllowance = activeSub ?? null;
 
       // Fixed day = midnight–midnight UTC. Allowance is consumed continuously from first online that day.
       const startOfToday = new Date(now);
@@ -229,16 +234,18 @@ export const toggleDriverAvailability = async (
             status: "ONLINE",
             lastPingAt: now,
             firstOnlineAtToday: now,
+            sessionStartedAt: now,
           },
           update: {
             firstOnlineAtToday: now,
+            sessionStartedAt: now, // New day = new session
           },
         });
       }
 
-      // Continuous countdown: elapsed real time since first online today (does not pause when offline)
+      // Daily allowance check (only for active sub with cap)
+      const dailyCap = subForAllowance?.dailyAllowanceMinutes ?? null;
       const elapsedMinutes = (now.getTime() - firstOnlineAtToday.getTime()) / 60000;
-      const dailyCap = activeSub.dailyAllowanceMinutes ?? null;
       if (dailyCap != null && elapsedMinutes >= dailyCap) {
         return res.status(403).json({
           success: false,
@@ -280,17 +287,20 @@ export const toggleDriverAvailability = async (
       },
     });
 
-    // Update DriverStatus
+    // Update DriverStatus (sessionStartedAt: set when going online, clear when offline)
+    const driverStatusNow = new Date();
     await prisma.driverStatus.upsert({
       where: { driverId },
       create: {
         driverId,
         status: isAvailable ? "ONLINE" : "OFFLINE",
-        lastPingAt: new Date(),
+        lastPingAt: driverStatusNow,
+        sessionStartedAt: isAvailable ? driverStatusNow : null,
       },
       update: {
         status: isAvailable ? "ONLINE" : "OFFLINE",
-        lastPingAt: new Date(),
+        lastPingAt: driverStatusNow,
+        sessionStartedAt: isAvailable ? driverStatusNow : null,
       },
     });
 
@@ -496,9 +506,13 @@ export const driverHeartbeat = async (
       console.warn("Auto arrived-at-pickup check failed:", arrivedErr);
     }
 
-    // Check daily allowance (continuous from first online today). Force offline when exceeded.
+    // Check daily allowance, 12h session limit, subscription. Force offline when exceeded.
+    const SESSION_MAX_HOURS = 12;
     let dailyAllowanceExceeded = false;
     let subscriptionJustExpired = false;
+    let sessionLimitReached = false;
+    let overtimeCharged = 0;
+    let overtimeHours = 0;
 
     try {
       const currentStatus = await prisma.driverStatus.findUnique({
@@ -515,23 +529,101 @@ export const driverHeartbeat = async (
 
       let forcedOffline = false;
 
-      // No active subscription (expired or none): force offline
+      // No active subscription: check for 4-hour grace period (expired sub) or force offline
       if (currentStatus?.status === "ONLINE" && !activeSub) {
-        subscriptionJustExpired = true;
-        forcedOffline = true;
-        await prisma.$transaction(async (tx) => {
-          await tx.driverStatus.update({
-            where: { driverId },
-            data: { status: "OFFLINE" },
-          });
-          await tx.driverLocation.updateMany({
-            where: { driverId },
-            data: { isOnline: false, isAvailable: false },
-          });
-        });
+        let gracePeriodEnded = true; // assume force offline unless in grace
         try {
-          await redis.del(getDriverAvailabilityKey(driverId));
-        } catch (_) {}
+          const { applyOvertimeBilling, isInGracePeriod } = await import("../../services/overtimeBillingService");
+          const graceCheck = await isInGracePeriod(driverId);
+          if (graceCheck?.inGrace) {
+            gracePeriodEnded = false;
+            // In grace: allow online, charge ₹10/hr (max 4h total)
+            const otResult = await applyOvertimeBilling(driverId);
+            if (otResult) {
+              overtimeCharged = otResult.charged;
+              overtimeHours = otResult.hours;
+              gracePeriodEnded = otResult.gracePeriodEnded;
+            }
+          } else {
+            // No expired sub or grace ended: apply any final overtime, then force offline
+            const otResult = await applyOvertimeBilling(driverId);
+            if (otResult) {
+              overtimeCharged = otResult.charged;
+              overtimeHours = otResult.hours;
+              gracePeriodEnded = otResult.gracePeriodEnded;
+            }
+            if (gracePeriodEnded || !graceCheck) {
+              subscriptionJustExpired = true;
+              forcedOffline = true;
+              await prisma.$transaction(async (tx) => {
+                await tx.driverStatus.update({
+                  where: { driverId },
+                  data: { status: "OFFLINE" },
+                });
+                await tx.driverLocation.updateMany({
+                  where: { driverId },
+                  data: { isOnline: false, isAvailable: false },
+                });
+              });
+              try {
+                await redis.del(getDriverAvailabilityKey(driverId));
+              } catch (_) {}
+            }
+          }
+        } catch (otErr) {
+          console.warn("Overtime billing failed:", otErr);
+          // On error, force offline to be safe
+          subscriptionJustExpired = true;
+          forcedOffline = true;
+          await prisma.$transaction(async (tx) => {
+            await tx.driverStatus.update({
+              where: { driverId },
+              data: { status: "OFFLINE" },
+            });
+            await tx.driverLocation.updateMany({
+              where: { driverId },
+              data: { isOnline: false, isAvailable: false },
+            });
+          });
+          try {
+            await redis.del(getDriverAvailabilityKey(driverId));
+          } catch (_) {}
+        }
+      }
+
+      // 12-hour session limit: auto-offline for safety (driver may forget to go offline)
+      if (!forcedOffline && currentStatus?.status === "ONLINE") {
+        const sessionStart = currentStatus.sessionStartedAt ?? currentStatus.lastPingAt ?? nowDate;
+        const sessionHours = (now - sessionStart.getTime()) / (60 * 60 * 1000);
+        if (sessionHours >= SESSION_MAX_HOURS) {
+          sessionLimitReached = true;
+          forcedOffline = true;
+          await prisma.$transaction(async (tx) => {
+            await tx.driverStatus.update({
+              where: { driverId },
+              data: { status: "OFFLINE", sessionStartedAt: null },
+            });
+            await tx.driverLocation.updateMany({
+              where: { driverId },
+              data: { isOnline: false, isAvailable: false },
+            });
+            await tx.driverDetails.updateMany({
+              where: { driverId },
+              data: { isAvailable: false },
+            });
+          });
+          try {
+            await redis.del(getDriverAvailabilityKey(driverId));
+          } catch (_) {}
+          try {
+            const { sendFcmToDriver } = await import("../../services/fcmService");
+            await sendFcmToDriver(driverId, {
+              title: "You have been taken offline",
+              body: "You were online for 12 hours. For safety, you have been automatically taken offline. Tap to go online again when ready.",
+              data: { type: "session_limit" },
+            });
+          } catch (_) {}
+        }
       }
 
       // Daily cap: continuous countdown from first online today (midnight–midnight UTC)
@@ -610,7 +702,9 @@ export const driverHeartbeat = async (
       ? "Subscription expired; you are now offline"
       : dailyAllowanceExceeded
         ? "Daily allowance used; you are now offline"
-        : "Heartbeat received";
+        : sessionLimitReached
+          ? "You were online for 12 hours. For safety, you have been taken offline."
+          : "Heartbeat received";
     return res.status(200).json({
       success: true,
       message,
@@ -623,7 +717,10 @@ export const driverHeartbeat = async (
         locationPersistedToDb: shouldPersistLocationToDb(),
         subscription: {
           dailyAllowanceExceeded,
-          justExpired: subscriptionJustExpired,
+          justExpired: subscriptionJustExpired || sessionLimitReached,
+          sessionLimitReached,
+          overtimeCharged: overtimeCharged > 0 ? overtimeCharged : undefined,
+          overtimeHours: overtimeHours > 0 ? overtimeHours : undefined,
         },
       },
     });
