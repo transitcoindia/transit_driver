@@ -2,6 +2,24 @@ import { Request, Response, NextFunction } from "express";
 import { prisma } from "../../prismaClient";
 import AppError from "../../utils/AppError";
 
+/** Haversine distance in km between two lat/lng points. */
+function haversineKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const R = 6371; // Earth radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 /** Rate per minute: 6 AM–10 PM = ₹1, 10 PM–6 AM = ₹1.5 */
 function getWaitingRateForMinute(date: Date): number {
   const h = date.getHours();
@@ -334,9 +352,15 @@ export const startRide = async (
   }
 };
 
+const COMPLETION_RADIUS_KM = 3;
+
 /**
- * Complete ride
+ * Complete ride (canonical completion for drivers).
  * POST /api/driver/rides/:rideId/complete
+ *
+ * Rules:
+ * - Ride status must be in_progress and requester must be the assigned driver.
+ * - Driver must be within 3 km of the drop location (completionLatitude, completionLongitude required).
  */
 export const completeRide = async (
   req: Request,
@@ -350,13 +374,31 @@ export const completeRide = async (
 
     const driverId = req.driver.id as string;
     const { rideId } = req.params;
-    const { actualFare, actualDistance, actualDuration, paymentMethod, transactionId } = req.body;
+    const {
+      actualFare,
+      actualDistance,
+      actualDuration,
+      paymentMethod,
+      transactionId,
+      completionLatitude,
+      completionLongitude,
+    } = req.body;
 
     if (!rideId) {
       return next(new AppError("Ride ID is required", 400));
     }
+    if (
+      typeof completionLatitude !== "number" ||
+      typeof completionLongitude !== "number"
+    ) {
+      return next(
+        new AppError(
+          "completionLatitude and completionLongitude are required (driver location when completing)",
+          400
+        )
+      );
+    }
 
-    // Find the ride
     const ride = await prisma.ride.findUnique({
       where: { id: rideId },
       include: {
@@ -369,14 +411,12 @@ export const completeRide = async (
       return next(new AppError("Ride not found", 404));
     }
 
-    // Verify driver is assigned to this ride
     if (ride.driverId !== driverId) {
       return next(
         new AppError("You are not assigned to this ride", 403)
       );
     }
 
-    // Check if ride can be completed
     if (ride.status !== "in_progress") {
       return next(
         new AppError(
@@ -384,6 +424,34 @@ export const completeRide = async (
           400
         )
       );
+    }
+
+    // 3 km rule: driver must be within 3 km of drop location to complete
+    let dropLat: number | null = ride.dropLatitude;
+    let dropLng: number | null = ride.dropLongitude;
+    if (dropLat == null || dropLng == null) {
+      const wp = ride.waypoints as Array<{ latitude: number; longitude: number }> | null;
+      if (wp && wp.length > 0) {
+        const last = wp[wp.length - 1];
+        dropLat = last.latitude;
+        dropLng = last.longitude;
+      }
+    }
+    if (dropLat != null && dropLng != null) {
+      const distToDropKm = haversineKm(
+        completionLatitude,
+        completionLongitude,
+        dropLat,
+        dropLng
+      );
+      if (distToDropKm > COMPLETION_RADIUS_KM) {
+        return next(
+          new AppError(
+            `Ride can only be completed within ${COMPLETION_RADIUS_KM} km of the drop location. You are ${distToDropKm.toFixed(1)} km away.`,
+            400
+          )
+        );
+      }
     }
 
     // Calculate actual duration if start time exists
