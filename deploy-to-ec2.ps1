@@ -6,7 +6,10 @@ param(
     [string]$SSH_KEY = "C:\Users\adity\Downloads\transit-driver-key.pem",
     [string]$BRANCH = "main",
     [switch]$SkipSchema = $false,
-    [switch]$SkipInstall = $false
+    [switch]$SkipInstall = $false,
+    [switch]$TestConnection = $false,
+    [switch]$VerboseSSH = $false,
+    [switch]$SkipConnectionTest = $false
 )
 
 Write-Host "========================================" -ForegroundColor Cyan
@@ -72,59 +75,105 @@ Write-Host ""
 Write-Host "Step 3: Connecting to EC2 and deploying..." -ForegroundColor Cyan
 Write-Host ""
 
-# Build deployment command (force EC2 repo to match remote main)
-$deployCommands = @(
-    "cd ~/transit_driver",
-    "echo '[INFO] Pulling latest code...'",
-    "git fetch origin",
-    "git checkout $BRANCH",
-    "git reset --hard origin/$BRANCH",
-    "git clean -fd"
-)
-
-if (-not $SkipInstall) {
-    $deployCommands += @(
-        "echo '[INFO] Installing dependencies...'",
-        "npm install"
-    )
-}
-
-$deployCommands += @(
-    "echo '[INFO] Generating Prisma client...'",
-    "npx prisma generate",
-    "echo '[INFO] Building TypeScript...'",
-    "npm run build"
-)
-
-if (-not $SkipSchema) {
-    $deployCommands += @(
-        "echo '[INFO] Checking for schema changes...'",
-        "if [ -f push-schema-ec2.sh ]; then bash push-schema-ec2.sh; else echo '[WARN] Schema script not found, skipping'; fi"
-    )
-}
-
-$deployCommands += @(
-    "echo '[INFO] Restarting service...'",
-    "pm2 restart transit-driver",
-    "pm2 save",
-    "echo ''",
-    "echo '[SUCCESS] Deployment complete!'",
-    "pm2 status",
-    "echo ''",
-    "echo '[INFO] Recent logs:'",
-    "pm2 logs transit-driver --lines 20 --nostream"
-)
-
-$deployScript = $deployCommands -join " && "
-
-# Execute SSH command
-$sshCommand = "ssh -i `"$SSH_KEY`" -o StrictHostKeyChecking=no ec2-user@$EC2_IP `"$deployScript`""
-
-Write-Host "Executing deployment commands on EC2..." -ForegroundColor Gray
+# Show user's public IP (for security group whitelist)
+try {
+    $myIp = (Invoke-WebRequest -Uri "https://api.ipify.org" -UseBasicParsing -TimeoutSec 5).Content.Trim()
+    Write-Host "Your public IP: $myIp" -ForegroundColor Gray
+    Write-Host "  (Add inbound SSH port 22 from $myIp in EC2 Security Group)" -ForegroundColor DarkGray
+} catch { Write-Host "  (Could not fetch your IP)" -ForegroundColor DarkGray }
 Write-Host ""
 
+# Quick connectivity test before full deploy (skip with -SkipConnectionTest)
+if (-not $SkipConnectionTest) {
+    Write-Host "Testing SSH connection..." -ForegroundColor Gray
+    $null = ssh -i $SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=15 -o ServerAliveInterval=5 ec2-user@$EC2_IP "echo OK"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ Pre-check failed. Try: .\deploy-to-ec2.ps1 -SkipConnectionTest" -ForegroundColor Red
+        Write-Host "   Or fix: Security group port 22, instance running, PEM key." -ForegroundColor Yellow
+        exit 1
+    }
+    Write-Host "✅ SSH connection OK" -ForegroundColor Green
+} else {
+    Write-Host "⏭️  Skipping connection test" -ForegroundColor Yellow
+}
+Write-Host ""
+
+# Test connection only (for troubleshooting)
+if ($TestConnection) {
+    Write-Host "Testing SSH connection (verbose)..." -ForegroundColor Cyan
+    & ssh -i $SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=60 ec2-user@$EC2_IP "echo OK"
+    exit $LASTEXITCODE
+}
+
+# Use SCP + SSH with short commands to avoid "banner exchange" timeouts
+$remoteScript = "/tmp/deploy-transit.sh"
+$localScript = Join-Path $env:TEMP "deploy-transit-$(Get-Date -Format 'yyyyMMddHHmmss').sh"
+
+$installBlock = if (-not $SkipInstall) { @"
+echo '[INFO] Installing dependencies...'
+npm install
+
+"@ } else { "" }
+$schemaBlock = if (-not $SkipSchema) { @"
+if [ -f push-schema-ec2.sh ]; then bash push-schema-ec2.sh; else echo '[WARN] Schema script not found'; fi
+
+"@ } else { "" }
+
+$scriptContent = @"
+#!/bin/bash
+set -e
+cd ~/transit_driver
+echo '[INFO] Pulling latest code...'
+git fetch origin
+git checkout $BRANCH
+git reset --hard origin/$BRANCH
+git clean -fd
+
+$installBlock
+echo '[INFO] Generating Prisma client...'
+npx prisma generate
+echo '[INFO] Building TypeScript...'
+npm run build
+
+$schemaBlock
+echo '[INFO] Restarting service...'
+pm2 restart transit-driver
+pm2 save
+echo '[SUCCESS] Deployment complete!'
+pm2 status
+pm2 logs transit-driver --lines 20 --nostream
+"@
+
+# Unix line endings for bash on EC2
+[System.IO.File]::WriteAllText($localScript, ($scriptContent -replace "`r`n","`n"))
+
+Write-Host "Copying deploy script to EC2..." -ForegroundColor Gray
+$scpArgs = @("-i", $SSH_KEY, "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=60", "-o", "ServerAliveInterval=10", $localScript, "ec2-user@${EC2_IP}:$remoteScript")
+if ($VerboseSSH) { $scpArgs = @("-v") + $scpArgs }
+& scp @scpArgs
+if ($LASTEXITCODE -ne 0) {
+    Remove-Item $localScript -ErrorAction SilentlyContinue
+    Write-Host ""
+    Write-Host "❌ SCP failed - cannot reach EC2" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Fix in AWS Console:" -ForegroundColor Yellow
+    Write-Host "  1. EC2 → Instances → select instance → Security tab" -ForegroundColor Gray
+    Write-Host "  2. Click the Security Group → Edit inbound rules" -ForegroundColor Gray
+    Write-Host "  3. Add: Type=SSH, Port=22, Source=My IP (or your IP: see above)" -ForegroundColor Gray
+    Write-Host "  4. If using dynamic IP, try Source=0.0.0.0/0 (less secure)" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Or try: different WiFi, disable VPN, check instance is Running" -ForegroundColor Gray
+    exit 1
+}
+Remove-Item $localScript -ErrorAction SilentlyContinue
+
+Write-Host "Executing deployment on EC2..." -ForegroundColor Gray
+Write-Host ""
+
+$sshArgs = @("-i", $SSH_KEY, "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=60", "-o", "ServerAliveInterval=10", "ec2-user@$EC2_IP", "chmod +x $remoteScript && bash $remoteScript; rm -f $remoteScript")
+if ($VerboseSSH) { $sshArgs = @("-v") + $sshArgs }
 try {
-    Invoke-Expression $sshCommand
+    & ssh @sshArgs
     
     if ($LASTEXITCODE -eq 0) {
         Write-Host ""
