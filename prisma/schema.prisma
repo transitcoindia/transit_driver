@@ -252,6 +252,8 @@ model Driver {
   assignedRides  RideRequest[]        @relation("AssignedDriver")
   emergencyContacts DriverEmergencyContact[]
   driverWallet   DriverWallet?
+  cancellationStrikes DriverCancellationStrike[]
+  validReasonCancels DriverValidReasonCancel[]
 
   // Indexes for better query performance
   @@index([userId])
@@ -271,6 +273,32 @@ model DriverEmergencyContact {
 
   @@index([driverId])
   @@map("driver_emergency_contact")
+}
+
+model DriverCancellationStrike {
+  id         String   @id @default(cuid())
+  driverId   String
+  driver     Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  rideId     String
+  strikeType String   // "full" | "light"
+  cancelledAt DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([driverId, createdAt])
+  @@map("driver_cancellation_strike")
+}
+
+model DriverValidReasonCancel {
+  id          String   @id @default(cuid())
+  driverId    String
+  driver      Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  rideId      String
+  reasonType  String
+  cancelledAt DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([driverId, cancelledAt])
+  @@map("driver_valid_reason_cancel")
 }
 
 model DriverDocument {
@@ -531,6 +559,12 @@ model Ride {
   // Waiting time at pickup: driver arrived till OTP entered (first 3 min free; then ₹1/min 6–22, ₹1.5/min 22–6)
   driverArrivedAtPickupAt DateTime?
   waitingCharges         Float?    // in rupees
+
+  // Driver cancellation policy: outcome fields
+  driverStrikeType             String?   // "full" | "light" | null
+  driverCompensationAmount     Float?    // amount credited to driver
+  driverCancellationReasonType String?   // "vehicle_breakdown" | "accident" | "medical_emergency" | "unsafe_pickup" | "road_blockage" | null
+  riderCallAttemptedAt         DateTime? // when driver first attempted in-app call (for no-show rule)
 
   // Timestamps
   createdAt         DateTime @default(now())

@@ -25,6 +25,7 @@ import { getRideChatHistory, sendRideChatMessage } from '../controllers/ride_con
 import {
     acceptRide,
     arrivedAtPickup,
+    riderCallAttempted,
     startRide,
     completeRide,
     markPaymentReceived,
@@ -63,6 +64,8 @@ import {
   updateEmergencyContact,
   deleteEmergencyContact,
   triggerSos,
+  updateSosLocation,
+  getSosLive,
 } from '../controllers/auth_controllers/emergency';
 import { registerFcmToken } from '../controllers/auth_controllers/fcmToken';
 import { getDocumentStatus, getVehicleImages, uploadDocuments, createOrUpdateVehicleInfo, uploadVehicleImages } from '../controllers/auth_controllers/documents';
@@ -198,6 +201,9 @@ router.post('/emergency/contacts', authenticate as RequestHandler, addEmergencyC
 router.put('/emergency/contacts/:contactId', authenticate as RequestHandler, updateEmergencyContact as RequestHandler);
 router.delete('/emergency/contacts/:contactId', authenticate as RequestHandler, deleteEmergencyContact as RequestHandler);
 router.post('/emergency/sos', authenticate as RequestHandler, triggerSos as RequestHandler);
+router.post('/emergency/sos/:sessionId/location', authenticate as RequestHandler, updateSosLocation as RequestHandler);
+// Public – no auth. Shared via SMS to emergency contacts.
+router.get('/emergency/sos/live/:sessionId', getSosLive as RequestHandler);
 
 router.get('/documents/status', authenticate as RequestHandler, getDocumentStatus as RequestHandler);
 router.get('/documents/vehicleImages', authenticate as RequestHandler, getVehicleImages as RequestHandler);
@@ -220,6 +226,7 @@ router.post('/rides/:rideId/rate-rider', authenticate as RequestHandler, rateRid
 router.post('/rides_accepted', authenticate as RequestHandler, storeRideAcceptedFromGateway as RequestHandler);
 router.post('/rides/:rideId/accept', authenticate as RequestHandler, acceptRide as RequestHandler);
 router.post('/rides/:rideId/arrived-at-pickup', authenticate as RequestHandler, arrivedAtPickup as RequestHandler);
+router.post('/rides/:rideId/rider-call-attempted', authenticate as RequestHandler, riderCallAttempted as RequestHandler);
 router.post('/rides/:rideId/start', authenticate as RequestHandler, startRide as RequestHandler);
 router.post('/rides/:rideId/complete', authenticate as RequestHandler, completeRide as RequestHandler);
 router.post('/rides/:rideId/payment-received', authenticate as RequestHandler, markPaymentReceived as RequestHandler);

@@ -1,6 +1,11 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../../prismaClient";
 import AppError from "../../utils/AppError";
+import redis from "../../redis";
+import {
+  computeDriverCancellationOutcome,
+  VALID_CANCELLATION_REASONS,
+} from "../../services/driverCancellationPolicyService";
 
 /** Haversine distance in km between two lat/lng points. */
 function haversineKm(
@@ -209,6 +214,62 @@ export const arrivedAtPickup = async (
   } catch (error: any) {
     console.error("Error recording arrived at pickup:", error);
     return next(new AppError("Failed to record arrived at pickup", 500));
+  }
+};
+
+/**
+ * Record in-app call attempt to rider (required for no-show cancellation rule).
+ * POST /api/driver/rides/:rideId/rider-call-attempted
+ */
+export const riderCallAttempted = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    if (!req.driver?.id) {
+      return next(new AppError("Driver not authenticated", 401));
+    }
+    const driverId = req.driver.id as string;
+    const { rideId } = req.params;
+
+    if (!rideId) {
+      return next(new AppError("Ride ID is required", 400));
+    }
+
+    const ride = await prisma.ride.findUnique({
+      where: { id: rideId },
+      select: { id: true, driverId: true, riderCallAttemptedAt: true },
+    });
+
+    if (!ride) {
+      return next(new AppError("Ride not found", 404));
+    }
+    if (ride.driverId !== driverId) {
+      return next(new AppError("You are not assigned to this ride", 403));
+    }
+    if (ride.riderCallAttemptedAt) {
+      return res.status(200).json({
+        success: true,
+        message: "Call attempt already recorded",
+        data: { riderCallAttemptedAt: ride.riderCallAttemptedAt },
+      });
+    }
+
+    const now = new Date();
+    await prisma.ride.update({
+      where: { id: rideId },
+      data: { riderCallAttemptedAt: now, updatedAt: now },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Call attempt recorded",
+      data: { riderCallAttemptedAt: now },
+    });
+  } catch (error: any) {
+    console.error("Error recording rider call attempt:", error);
+    return next(new AppError("Failed to record call attempt", 500));
   }
 };
 
@@ -614,9 +675,14 @@ export const markPaymentReceived = async (
   }
 };
 
+const getDriverLocationKey = (driverId: string) => `driver:location:${driverId}`;
+const getDriverActiveRideKey = (driverId: string) => `driver:active_ride:${driverId}`;
+
 /**
  * Cancel ride (by driver)
  * POST /api/driver/rides/:rideId/cancel
+ * Body: { cancellationReason?, cancellationReasonType?, riderCallAttempted?, latitude?, longitude? }
+ * Applies driver cancellation policy: 45s free, distance-based charges, no-show, valid reasons.
  */
 export const cancelRide = async (
   req: Request,
@@ -630,13 +696,18 @@ export const cancelRide = async (
 
     const driverId = req.driver.id as string;
     const { rideId } = req.params;
-    const { cancellationReason, cancellationFee } = req.body;
+    const {
+      cancellationReason,
+      cancellationReasonType,
+      riderCallAttempted,
+      latitude,
+      longitude,
+    } = req.body || {};
 
     if (!rideId) {
       return next(new AppError("Ride ID is required", 400));
     }
 
-    // Find the ride
     const ride = await prisma.ride.findUnique({
       where: { id: rideId },
       include: {
@@ -649,61 +720,208 @@ export const cancelRide = async (
       return next(new AppError("Ride not found", 404));
     }
 
-    // Verify driver is assigned to this ride
     if (ride.driverId !== driverId) {
-      return next(
-        new AppError("You are not assigned to this ride", 403)
-      );
+      return next(new AppError("You are not assigned to this ride", 403));
     }
 
-    // Check if ride can be cancelled
     if (ride.status === "completed" || ride.status === "cancelled") {
       return next(
-        new AppError(
-          `Cannot cancel ride with status: ${ride.status}`,
-          400
-        )
+        new AppError(`Cannot cancel ride with status: ${ride.status}`, 400)
       );
     }
 
-    // Use transaction to atomically cancel ride and update related data
+    // Resolve driver current location (body > Redis > accept location)
+    let driverLat: number;
+    let driverLng: number;
+    if (typeof latitude === "number" && typeof longitude === "number") {
+      driverLat = latitude;
+      driverLng = longitude;
+    } else {
+      try {
+        const locKey = getDriverLocationKey(driverId);
+        const raw = await redis.get(locKey);
+        if (raw) {
+          const parsed = JSON.parse(raw) as { latitude?: number; longitude?: number };
+          if (typeof parsed.latitude === "number" && typeof parsed.longitude === "number") {
+            driverLat = parsed.latitude;
+            driverLng = parsed.longitude;
+          } else {
+            driverLat = ride.driverLatAtAccept ?? ride.pickupLatitude;
+            driverLng = ride.driverLngAtAccept ?? ride.pickupLongitude;
+          }
+        } else {
+          const loc = await prisma.driverLocation.findUnique({
+            where: { driverId },
+            select: { latitude: true, longitude: true },
+          });
+          driverLat = loc?.latitude ?? ride.driverLatAtAccept ?? ride.pickupLatitude;
+          driverLng = loc?.longitude ?? ride.driverLngAtAccept ?? ride.pickupLongitude;
+        }
+      } catch {
+        driverLat = ride.driverLatAtAccept ?? ride.pickupLatitude;
+        driverLng = ride.driverLngAtAccept ?? ride.pickupLongitude;
+      }
+    }
+
+    // Valid-reason limit: >3 in last 7 days → remove penalty waiver
+    let effectiveReasonType: string | null = cancellationReasonType ?? null;
+    if (effectiveReasonType && VALID_CANCELLATION_REASONS.includes(effectiveReasonType as any)) {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const recentValid = await prisma.driverValidReasonCancel.count({
+        where: {
+          driverId,
+          cancelledAt: { gte: sevenDaysAgo },
+        },
+      });
+      if (recentValid >= 3) {
+        effectiveReasonType = null; // Treat as regular cancel
+      }
+    }
+
+    const outcome = computeDriverCancellationOutcome({
+      rideId,
+      driverId,
+      driverLat,
+      driverLng,
+      cancellationReason,
+      cancellationReasonType: effectiveReasonType,
+      riderCallAttempted,
+      driverAcceptedAt: ride.driverAcceptedAt,
+      driverLatAtAccept: ride.driverLatAtAccept,
+      driverLngAtAccept: ride.driverLngAtAccept,
+      pickupLatitude: ride.pickupLatitude,
+      pickupLongitude: ride.pickupLongitude,
+      driverArrivedAtPickupAt: ride.driverArrivedAtPickupAt,
+      riderCallAttemptedAt: ride.riderCallAttemptedAt,
+      requestedVehicleType: ride.requestedVehicleType,
+      vehicleType: ride.vehicle?.vehicleType ?? null,
+    });
+
     const cancelledAt = new Date();
+    const riderCharged = outcome.riderChargedAmount;
+    const driverComp = outcome.driverCompensationAmount;
+
     const cancelledRide = await prisma.$transaction(async (tx) => {
-      // Update ride status to cancelled
-      const updateData: any = {
+      const updateData: Record<string, unknown> = {
         status: "cancelled",
         cancelledBy: "driver",
-        cancelledAt: cancelledAt,
-        endTime: cancelledAt, // Set end time when cancelled
+        cancelledAt,
+        endTime: cancelledAt,
         updatedAt: cancelledAt,
-        rideOtp: null, // Clear OTP when ride is cancelled
-        cancellationReason: cancellationReason || "Cancelled by driver",
-        cancellationFee: cancellationFee !== undefined ? cancellationFee : 0,
+        rideOtp: null,
+        cancellationReason: cancellationReason || outcome.message || "Cancelled by driver",
+        cancellationFee: riderCharged,
+        driverStrikeType: outcome.driverStrikeType,
+        driverCompensationAmount: driverComp,
+        driverCancellationReasonType: outcome.driverCancellationReasonType,
       };
+      if (riderCallAttempted && !ride.riderCallAttemptedAt) {
+        (updateData as any).riderCallAttemptedAt = cancelledAt;
+      }
 
       const updatedRide = await tx.ride.update({
         where: { id: rideId },
         data: updateData,
       });
 
-      // Update vehicle availability
       if (ride.vehicleId) {
         await tx.vehicle.update({
           where: { id: ride.vehicleId },
-          data: {
-            isAvailable: true,
-          },
+          data: { isAvailable: true },
         });
       }
 
-      // Mark driver as not in trip so DriverLocation.isInTrip stays in sync
       await tx.driverLocation.updateMany({
         where: { driverId },
         data: { isInTrip: false },
       });
 
+      // Rider wallet: debit (allow negative)
+      if (riderCharged > 0) {
+        let riderWallet = await tx.wallet.findUnique({ where: { riderId: ride.riderId } });
+        if (!riderWallet) {
+          riderWallet = await tx.wallet.create({
+            data: { riderId: ride.riderId },
+          });
+        }
+        const balBefore = riderWallet.balance;
+        const balAfter = balBefore - riderCharged;
+
+        await tx.wallet.update({
+          where: { id: riderWallet.id },
+          data: { balance: balAfter, updatedAt: cancelledAt },
+        });
+        await tx.walletTransaction.create({
+          data: {
+            walletId: riderWallet.id,
+            type: "debit",
+            amount: riderCharged,
+            balanceBefore: balBefore,
+            balanceAfter: balAfter,
+            description: `Cancellation fee for ride ${ride.rideCode}`,
+            referenceType: "cancellation_fee",
+            referenceId: rideId,
+          },
+        });
+      }
+
+      // Driver wallet: credit
+      if (driverComp > 0) {
+        let dw = await tx.driverWallet.findUnique({ where: { driverId } });
+        if (!dw) {
+          dw = await tx.driverWallet.create({ data: { driverId } });
+        }
+        const balBefore = dw.balance;
+        const balAfter = balBefore + driverComp;
+
+        await tx.driverWallet.update({
+          where: { id: dw.id },
+          data: { balance: balAfter, updatedAt: cancelledAt },
+        });
+        await tx.driverWalletTransaction.create({
+          data: {
+            driverWalletId: dw.id,
+            type: "credit",
+            amount: driverComp,
+            balanceBefore: balBefore,
+            balanceAfter: balAfter,
+            description: `Cancellation compensation for ride ${ride.rideCode}`,
+            referenceType: "cancellation_compensation",
+            referenceId: rideId,
+          },
+        });
+      }
+
+      if (outcome.driverStrikeType) {
+        await tx.driverCancellationStrike.create({
+          data: {
+            driverId,
+            rideId,
+            strikeType: outcome.driverStrikeType,
+            cancelledAt,
+          },
+        });
+      }
+
+      if (outcome.driverCancellationReasonType) {
+        await tx.driverValidReasonCancel.create({
+          data: {
+            driverId,
+            rideId,
+            reasonType: outcome.driverCancellationReasonType,
+            cancelledAt,
+          },
+        });
+      }
+
       return updatedRide;
     });
+
+    try {
+      await redis.del(getDriverActiveRideKey(driverId));
+    } catch (e) {
+      console.warn("Failed to clear driver active ride from Redis:", e);
+    }
 
     return res.status(200).json({
       success: true,
@@ -715,9 +933,16 @@ export const cancelRide = async (
           status: cancelledRide.status,
           cancellationReason: cancelledRide.cancellationReason,
           cancellationFee: cancelledRide.cancellationFee,
+          driverCompensationAmount: cancelledRide.driverCompensationAmount,
+          driverStrikeType: cancelledRide.driverStrikeType,
           cancelledBy: cancelledRide.cancelledBy,
           cancelledAt: cancelledRide.cancelledAt,
           endTime: cancelledRide.endTime,
+        },
+        outcome: {
+          category: outcome.category,
+          riderChargedAmount: riderCharged,
+          driverCompensationAmount: driverComp,
         },
       },
     });

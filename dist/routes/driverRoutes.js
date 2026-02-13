@@ -138,6 +138,9 @@ router.post('/emergency/contacts', authMiddle_1.authenticate, emergency_1.addEme
 router.put('/emergency/contacts/:contactId', authMiddle_1.authenticate, emergency_1.updateEmergencyContact);
 router.delete('/emergency/contacts/:contactId', authMiddle_1.authenticate, emergency_1.deleteEmergencyContact);
 router.post('/emergency/sos', authMiddle_1.authenticate, emergency_1.triggerSos);
+router.post('/emergency/sos/:sessionId/location', authMiddle_1.authenticate, emergency_1.updateSosLocation);
+// Public – no auth. Shared via SMS to emergency contacts.
+router.get('/emergency/sos/live/:sessionId', emergency_1.getSosLive);
 router.get('/documents/status', authMiddle_1.authenticate, documents_1.getDocumentStatus);
 router.get('/documents/vehicleImages', authMiddle_1.authenticate, documents_1.getVehicleImages);
 router.post('/documents/vehicleImages', authMiddle_1.authenticate, vehicleImageUpload, documents_1.uploadVehicleImages);
@@ -156,6 +159,7 @@ router.post('/rides/:rideId/rate-rider', authMiddle_1.authenticate, rating_1.rat
 router.post('/rides_accepted', authMiddle_1.authenticate, rideManagement_1.storeRideAcceptedFromGateway);
 router.post('/rides/:rideId/accept', authMiddle_1.authenticate, rideManagement_1.acceptRide);
 router.post('/rides/:rideId/arrived-at-pickup', authMiddle_1.authenticate, rideManagement_1.arrivedAtPickup);
+router.post('/rides/:rideId/rider-call-attempted', authMiddle_1.authenticate, rideManagement_1.riderCallAttempted);
 router.post('/rides/:rideId/start', authMiddle_1.authenticate, rideManagement_1.startRide);
 router.post('/rides/:rideId/complete', authMiddle_1.authenticate, rideManagement_1.completeRide);
 router.post('/rides/:rideId/payment-received', authMiddle_1.authenticate, rideManagement_1.markPaymentReceived);
