@@ -537,7 +537,8 @@ model Ride {
   // Route and tracking
   route             Json?    // Polyline or array of coordinates
   waypoints         Json?    // Intermediate stops [{latitude, longitude, address, order}]
-  isRoundTrip       Boolean  @default(false) // Pickup and drop same/similar; rider returns to origin
+  isRoundTrip       Boolean  @default(false) // Go to drop, then return to pickup (Ola/Uber style)
+  returnTimeMinutes Int?     // Wait at destination before return (30, 60, 120 min)
   driverLocationUpdates Json? // Array of {lat, lng, timestamp}
 
   // Rider's selected vehicle type (from rider backend; must match rider schema for shared DB)

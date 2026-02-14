@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import axios from "axios";
 import { prisma } from "../../prismaClient";
 import AppError from "../../utils/AppError";
 import redis from "../../redis";
@@ -921,6 +922,30 @@ export const cancelRide = async (
       await redis.del(getDriverActiveRideKey(driverId));
     } catch (e) {
       console.warn("Failed to clear driver active ride from Redis:", e);
+    }
+
+    // Notify rider via transit_backend (push notification)
+    const backendUrl = (process.env.BACKEND_URL || "").replace(/\/$/, "");
+    if (backendUrl && cancelledRide.riderId) {
+      axios
+        .post(
+          `${backendUrl}/api/internal/notify-ride-cancelled-by-driver`,
+          {
+            riderId: cancelledRide.riderId,
+            rideId,
+            message: cancelledRide.cancellationReason || "Your ride was cancelled by the driver.",
+          },
+          {
+            headers: process.env.INTERNAL_API_SECRET
+              ? { "X-Internal-Secret": process.env.INTERNAL_API_SECRET }
+              : {},
+            timeout: 5000,
+            validateStatus: () => true,
+          }
+        )
+        .catch((err) =>
+          console.warn("Failed to notify rider of driver cancellation:", err?.message)
+        );
     }
 
     return res.status(200).json({
