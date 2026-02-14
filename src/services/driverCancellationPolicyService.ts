@@ -1,9 +1,9 @@
 /**
  * Driver cancellation policy service.
- * Implements rules: 45s free window, distance-based charges, no-show, valid reasons, strikes.
+ * Implements rules: 15s free window, distance-based charges, no-show, valid reasons, strikes.
  */
 
-const FREE_CANCEL_WINDOW_SECONDS = 45;
+const FREE_CANCEL_WINDOW_SECONDS = 15; // Reduced from 45 so repeated cancellations get strikes
 const LOW_MOVEMENT_METERS = 300;
 const MODERATE_MOVEMENT_METERS = 1500;
 const ARRIVED_RADIUS_METERS = 100;
@@ -179,9 +179,9 @@ export function computeDriverCancellationOutcome(input: CancellationInput): Canc
   const now = new Date();
   const secondsSinceAccept = driverAcceptedAt
     ? (now.getTime() - driverAcceptedAt.getTime()) / 1000
-    : 0;
+    : Infinity; // Legacy rides without driverAcceptedAt: no free window, apply strikes
 
-  // Free cancellation within 45 seconds
+  // Free cancellation within window (accidental accept only)
   if (secondsSinceAccept <= FREE_CANCEL_WINDOW_SECONDS) {
     return {
       riderChargedAmount: 0,

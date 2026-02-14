@@ -82,6 +82,11 @@ export const acceptRide = async (
       return next(new AppError("Ride ID is required", 400));
     }
 
+    const strikeCheck = await shouldBlockDriverForStrikes(driverId);
+    if (strikeCheck.block) {
+      return next(new AppError(strikeCheck.message ?? "Cannot accept rides due to cancellation strikes", 403));
+    }
+
     // Find the ride (shared DB with rider backend)
     const ride = await prisma.ride.findUnique({
       where: { id: rideId },
@@ -122,6 +127,22 @@ export const acceptRide = async (
     });
     const vehicleId = driverVehicle?.id ?? undefined;
 
+    // Resolve driver location at accept (for cancellation policy strikes)
+    const acceptedAt = new Date();
+    let driverLatAtAccept: number | null = null;
+    let driverLngAtAccept: number | null = null;
+    try {
+      const locKey = getDriverLocationKey(driverId);
+      const raw = await redis.get(locKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { latitude?: number; longitude?: number };
+        if (typeof parsed.latitude === "number" && typeof parsed.longitude === "number") {
+          driverLatAtAccept = parsed.latitude;
+          driverLngAtAccept = parsed.longitude;
+        }
+      }
+    } catch (_) {}
+
     // Update ride: mark accepted, attach driverId, vehicleId, generate OTP
     const updatedRide = await prisma.ride.update({
       where: { id: rideId },
@@ -130,7 +151,10 @@ export const acceptRide = async (
         rideOtp: rideOtp,
         driverId: driverId,
         vehicleId: vehicleId ?? undefined,
-        updatedAt: new Date(),
+        driverAcceptedAt: acceptedAt,
+        driverLatAtAccept: driverLatAtAccept ?? undefined,
+        driverLngAtAccept: driverLngAtAccept ?? undefined,
+        updatedAt: acceptedAt,
       },
       select: {
         id: true,
@@ -679,6 +703,30 @@ export const markPaymentReceived = async (
 const getDriverLocationKey = (driverId: string) => `driver:location:${driverId}`;
 const getDriverActiveRideKey = (driverId: string) => `driver:active_ride:${driverId}`;
 
+/** Block driver from accepting if they have too many cancellation strikes in last 7 days */
+const STRIKE_BLOCK_FULL = 3;
+const STRIKE_BLOCK_LIGHT = 6;
+const STRIKE_WINDOW_DAYS = 7;
+
+async function shouldBlockDriverForStrikes(driverId: string): Promise<{ block: boolean; message?: string }> {
+  try {
+    const windowStart = new Date(Date.now() - STRIKE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const [fullCount, lightCount] = await Promise.all([
+      prisma.driverCancellationStrike.count({ where: { driverId, strikeType: "full", cancelledAt: { gte: windowStart } } }),
+      prisma.driverCancellationStrike.count({ where: { driverId, strikeType: "light", cancelledAt: { gte: windowStart } } }),
+    ]);
+    if (fullCount >= STRIKE_BLOCK_FULL) {
+      return { block: true, message: `You have ${fullCount} cancellation strikes. Please contact support.` };
+    }
+    if (lightCount >= STRIKE_BLOCK_LIGHT) {
+      return { block: true, message: `You have ${lightCount} cancellation strikes. Please contact support.` };
+    }
+    return { block: false };
+  } catch {
+    return { block: false };
+  }
+}
+
 /**
  * Cancel ride (by driver)
  * POST /api/driver/rides/:rideId/cancel
@@ -1018,7 +1066,17 @@ export const storeRideAcceptedFromGateway = async (
     }
     if (body.driverId && body.driverId !== driverId) {
       return next(new AppError("driverId does not match authenticated driver", 403));
-    }    const existingRide = await prisma.ride.findUnique({
+    }
+
+    const strikeCheck = await shouldBlockDriverForStrikes(driverId);
+    if (strikeCheck.block) {
+      return res.status(403).json({
+        success: false,
+        error: strikeCheck.message ?? "Cannot accept rides due to cancellation strikes",
+      });
+    }
+
+    const existingRide = await prisma.ride.findUnique({
       where: { id: rideId },
       select: { id: true, driverId: true, status: true },
     });
@@ -1040,6 +1098,20 @@ export const storeRideAcceptedFromGateway = async (
           message: "Ride already assigned to another driver",
         });
       }
+      const acceptedAt = new Date();
+      let driverLatAtAccept: number | null = null;
+      let driverLngAtAccept: number | null = null;
+      try {
+        const locKey = getDriverLocationKey(driverId);
+        const raw = await redis.get(locKey);
+        if (raw) {
+          const parsed = JSON.parse(raw) as { latitude?: number; longitude?: number };
+          if (typeof parsed.latitude === "number" && typeof parsed.longitude === "number") {
+            driverLatAtAccept = parsed.latitude;
+            driverLngAtAccept = parsed.longitude;
+          }
+        }
+      } catch (_) {}
       await prisma.ride.update({
         where: { id: rideId },
         data: {
@@ -1052,7 +1124,10 @@ export const storeRideAcceptedFromGateway = async (
           estimatedDuration: estimatedDuration ?? undefined,
           baseFare: baseFare ?? undefined,
           surgeMultiplier: surgeMultiplier ?? undefined,
-          updatedAt: new Date(),
+          driverAcceptedAt: acceptedAt,
+          driverLatAtAccept: driverLatAtAccept ?? undefined,
+          driverLngAtAccept: driverLngAtAccept ?? undefined,
+          updatedAt: acceptedAt,
         },
       });
       return res.status(200).json({
@@ -1078,6 +1153,21 @@ export const storeRideAcceptedFromGateway = async (
     const dropLat = dropLatitude != null ? Number(dropLatitude) : pickLat;
     const dropLng = dropLongitude != null ? Number(dropLongitude) : pickLng;
 
+    const acceptedAt = new Date();
+    let driverLatAtAccept: number | null = null;
+    let driverLngAtAccept: number | null = null;
+    try {
+      const locKey = getDriverLocationKey(driverId);
+      const raw = await redis.get(locKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { latitude?: number; longitude?: number };
+        if (typeof parsed.latitude === "number" && typeof parsed.longitude === "number") {
+          driverLatAtAccept = parsed.latitude;
+          driverLngAtAccept = parsed.longitude;
+        }
+      }
+    } catch (_) {}
+
     await prisma.ride.create({
       data: {
         id: rideId,
@@ -1098,7 +1188,10 @@ export const storeRideAcceptedFromGateway = async (
         estimatedDuration: estimatedDuration != null ? Number(estimatedDuration) : undefined,
         baseFare: baseFare != null ? Number(baseFare) : undefined,
         surgeMultiplier: surgeMultiplier != null ? Number(surgeMultiplier) : 1,
-        updatedAt: new Date(),
+        driverAcceptedAt: acceptedAt,
+        driverLatAtAccept: driverLatAtAccept ?? undefined,
+        driverLngAtAccept: driverLngAtAccept ?? undefined,
+        updatedAt: acceptedAt,
       },
     });    return res.status(200).json({
       success: true,
