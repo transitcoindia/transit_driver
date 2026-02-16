@@ -20,6 +20,7 @@ import {
 import {
     getDriverRideHistory,
     getDriverRideDetails,
+    getDriverActiveRide,
 } from '../controllers/ride_controllers/rideHistory';
 import { getRideChatHistory, sendRideChatMessage } from '../controllers/ride_controllers/rideChat';
 import {
@@ -217,6 +218,7 @@ router.post('/password-reset/verify-otp', resetPassword as RequestHandler);
 
 // Ride history routes
 router.get('/rides/history', authenticate as RequestHandler, getDriverRideHistory as RequestHandler);
+router.get('/rides/active', authenticate as RequestHandler, getDriverActiveRide as RequestHandler);
 router.get('/rides/:rideId', authenticate as RequestHandler, getDriverRideDetails as RequestHandler);
 router.get('/rides/:rideId/chat', authenticate as RequestHandler, getRideChatHistory as RequestHandler);
 router.post('/rides/:rideId/chat', authenticate as RequestHandler, sendRideChatMessage as RequestHandler);

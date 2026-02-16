@@ -100,6 +100,77 @@ export const getDriverRideHistory = async (
 };
 
 /**
+ * Get the driver's current active ride (accepted or in_progress), if any.
+ * Used on app startup to show "Return to ride" when driver had accepted but restarted the app.
+ * GET /api/driver/rides/active
+ */
+export const getDriverActiveRide = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    if (!req.driver?.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Driver not authenticated",
+      });
+    }
+    const driverId = req.driver.id as string;
+
+    const ride = await prisma.ride.findFirst({
+      where: {
+        driverId,
+        status: { in: ["accepted", "in_progress"] },
+      },
+      orderBy: { updatedAt: "desc" },
+      include: {
+        rider: {
+          select: {
+            id: true,
+            name: true,
+            phoneNumber: true,
+            image: true,
+          },
+        },
+        vehicle: {
+          select: {
+            id: true,
+            make: true,
+            model: true,
+            licensePlate: true,
+            color: true,
+            vehicleType: true,
+          },
+        },
+        serviceZone: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!ride) {
+      return res.status(200).json({
+        success: true,
+        data: null,
+        message: "No active ride",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: ride,
+    });
+  } catch (error: any) {
+    console.error("Error fetching driver active ride:", error);
+    return next(new AppError("Failed to fetch active ride", 500));
+  }
+};
+
+/**
  * Get a single ride detail by ID (only if the authenticated driver is assigned to the ride)
  */
 export const getDriverRideDetails = async (
