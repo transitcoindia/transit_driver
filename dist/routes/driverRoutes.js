@@ -151,6 +151,7 @@ router.post('/password-reset/request-otp', authControllers_1.sendResetEmailContr
 router.post('/password-reset/verify-otp', authControllers_1.resetPassword);
 // Ride history routes
 router.get('/rides/history', authMiddle_1.authenticate, rideHistory_1.getDriverRideHistory);
+router.get('/rides/active', authMiddle_1.authenticate, rideHistory_1.getDriverActiveRide);
 router.get('/rides/:rideId', authMiddle_1.authenticate, rideHistory_1.getDriverRideDetails);
 router.get('/rides/:rideId/chat', authMiddle_1.authenticate, rideChat_1.getRideChatHistory);
 router.post('/rides/:rideId/chat', authMiddle_1.authenticate, rideChat_1.sendRideChatMessage);
