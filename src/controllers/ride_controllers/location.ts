@@ -382,7 +382,7 @@ export const driverHeartbeat = async (
       });
     }
     const driverId = req.driver.id as string;
-    const { latitude, longitude } = req.body || {};
+    const { latitude, longitude, acceptRoundTrip } = req.body || {};
 
     const hasValidLocation =
       typeof latitude === "number" &&
@@ -413,6 +413,7 @@ export const driverHeartbeat = async (
         updatedAt: now,
         latitude,
         longitude,
+        acceptRoundTrip: acceptRoundTrip === false ? false : true,
       };
       await redis.set(
         availabilityKey,
