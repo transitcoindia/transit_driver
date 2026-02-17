@@ -135,10 +135,12 @@ export const createTopUpOrder = async (
       await prisma.driverWallet.create({ data: { driverId } });
 
     // Create Razorpay order
+    // Receipt must be max 40 characters (Razorpay requirement)
+    const receipt = `wt_${driverId.slice(-12)}_${Date.now().toString().slice(-8)}`.slice(0, 40);
     const options = {
       amount: Math.round(amount * 100), // Convert to paise
       currency: "INR",
-      receipt: `wallet_topup_driver_${driverId}_${Date.now()}`,
+      receipt: receipt,
       notes: {
         driverId: driverId,
         type: "wallet_topup",
