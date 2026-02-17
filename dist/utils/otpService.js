@@ -39,6 +39,7 @@ const sendOtp = async (phoneNumber, otp) => {
             variables_values: otp,
             route: 'otp',
             numbers: phoneNumber,
+            sender_id: 'TRANSIT',
         };
         // Make the axios POST request to Fast2SMS API
         const response = await axios_1.default.post('https://www.fast2sms.com/dev/bulkV2', payload, {
