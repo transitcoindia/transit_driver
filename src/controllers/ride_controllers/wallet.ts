@@ -119,6 +119,7 @@ export const createTopUpOrder = async (
       return res.status(400).json({
         success: false,
         error: "Amount must be at least 1 INR",
+        message: "Amount must be at least 1 INR",
       });
     }
 
@@ -158,7 +159,12 @@ export const createTopUpOrder = async (
     });
   } catch (error: any) {
     console.error("Error creating top-up order:", error);
-    return next(new AppError("Failed to create top-up order", 500));
+    const errorMessage = error?.message || "Failed to create top-up order";
+    return res.status(500).json({
+      success: false,
+      error: errorMessage,
+      message: errorMessage,
+    });
   }
 };
 
@@ -188,6 +194,7 @@ export const verifyTopUp = async (
       return res.status(400).json({
         success: false,
         error: "Missing required verification fields",
+        message: "Missing required verification fields",
       });
     }
 
@@ -195,6 +202,7 @@ export const verifyTopUp = async (
       return res.status(503).json({
         success: false,
         error: "Payment gateway not configured",
+        message: "Payment gateway not configured",
       });
     }
 
@@ -208,6 +216,7 @@ export const verifyTopUp = async (
       return res.status(400).json({
         success: false,
         error: "Payment verification failed",
+        message: "Payment verification failed",
       });
     }
 
@@ -256,6 +265,11 @@ export const verifyTopUp = async (
     });
   } catch (error: any) {
     console.error("Error verifying top-up:", error);
-    return next(new AppError("Failed to verify top-up", 500));
+    const errorMessage = error?.message || "Failed to verify top-up";
+    return res.status(500).json({
+      success: false,
+      error: errorMessage,
+      message: errorMessage,
+    });
   }
 };
