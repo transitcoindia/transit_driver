@@ -120,12 +120,12 @@ export const subscriptionActivateSchema = z.object({
     planId: z.string().min(1).optional(),
     amount: z.number().positive("Amount must be positive").optional(),
     paymentMode: z.string().min(1, "Payment mode is required"),
-    transactionId: z.string().optional(),
+    transactionId: z.string().nullable().optional(),
     durationDays: z.number().int().min(1).max(365).optional().default(30),
     includedMinutes: z.number().int().min(1).optional(),
-    razorpay_order_id: z.string().optional(),
-    razorpay_payment_id: z.string().optional(),
-    razorpay_signature: z.string().optional(),
+    razorpay_order_id: z.string().nullable().optional(),
+    razorpay_payment_id: z.string().nullable().optional(),
+    razorpay_signature: z.string().nullable().optional(),
 }).refine(data => {
     return !!data.planId || typeof data.amount === 'number';
 }, {
