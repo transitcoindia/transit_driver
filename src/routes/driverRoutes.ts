@@ -32,6 +32,7 @@ import {
     markPaymentReceived,
     cancelRide,
     storeRideAcceptedFromGateway,
+    getDriverStrikes,
 } from '../controllers/ride_controllers/rideManagement';
 import {
     getDriverEarnings,
@@ -78,6 +79,7 @@ import {
     rejectDriver,
     suspendDriver,
     updateDriverApproval,
+    getDriverStrikesAdmin,
 } from '../controllers/admin/driverAdmin';
 
 // Create uploads directory if it doesn't exist
@@ -234,6 +236,9 @@ router.post('/rides/:rideId/complete', authenticate as RequestHandler, completeR
 router.post('/rides/:rideId/payment-received', authenticate as RequestHandler, markPaymentReceived as RequestHandler);
 router.post('/rides/:rideId/cancel', authenticate as RequestHandler, cancelRide as RequestHandler);
 
+// Strike routes
+router.get('/strikes', authenticate as RequestHandler, getDriverStrikes as RequestHandler);
+
 // Earnings routes
 router.get('/earnings', authenticate as RequestHandler, getDriverEarnings as RequestHandler);
 router.get('/earnings/breakdown', authenticate as RequestHandler, getDriverEarningsBreakdown as RequestHandler);
@@ -277,5 +282,6 @@ router.put('/admin/suspend/:driverId', authenticateAdmin as RequestHandler, susp
 router.get('/admin/suspend', suspendDriver as RequestHandler); // Email token-based suspension (optional)
 router.post('/admin/suspend', suspendDriver as RequestHandler); // Email token-based suspension (POST)
 router.patch('/admin/:driverId/approval', authenticateAdmin as RequestHandler, updateDriverApproval as RequestHandler);
+router.get('/admin/strikes/:driverId', authenticateAdmin as RequestHandler, getDriverStrikesAdmin as RequestHandler);
 
 export default router;

@@ -559,3 +559,196 @@ export const suspendDriver = async (
     return next(new AppError("Error suspending driver", 500));
   }
 };
+
+/**
+ * Get cancellation strikes for a driver (admin only)
+ * GET /api/driver/admin/strikes/:driverId
+ * Returns complete strike details including ride information
+ */
+export const getDriverStrikesAdmin = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const user = req.user;
+    if (!user || !user.isAdmin) {
+      return next(new AppError("Admin access required", 403));
+    }
+
+    const { driverId } = req.params;
+    if (!driverId) {
+      return next(new AppError("Driver ID is required", 400));
+    }
+
+    // Verify driver exists
+    const driver = await prisma.driver.findUnique({
+      where: { id: driverId },
+      select: {
+        id: true,
+        name: true,
+        contactNumber: true,
+        approvalStatus: true,
+        accountActive: true,
+      },
+    });
+
+    if (!driver) {
+      return next(new AppError("Driver not found", 404));
+    }
+
+    const windowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // 7 days window
+
+    // Get strike counts
+    const [fullStrikesLast7Days, lightStrikesLast7Days, allStrikesLast7Days, totalStrikesAllTime] = await Promise.all([
+      prisma.driverCancellationStrike.count({
+        where: {
+          driverId,
+          strikeType: "full",
+          cancelledAt: { gte: windowStart },
+        },
+      }),
+      prisma.driverCancellationStrike.count({
+        where: {
+          driverId,
+          strikeType: "light",
+          cancelledAt: { gte: windowStart },
+        },
+      }),
+      prisma.driverCancellationStrike.findMany({
+        where: {
+          driverId,
+          cancelledAt: { gte: windowStart },
+        },
+        orderBy: { cancelledAt: "desc" },
+        include: {
+          driver: {
+            select: {
+              id: true,
+              name: true,
+              contactNumber: true,
+            },
+          },
+        },
+      }),
+      prisma.driverCancellationStrike.findMany({
+        where: { driverId },
+        orderBy: { cancelledAt: "desc" },
+        take: 50, // Last 50 strikes all time
+        include: {
+          driver: {
+            select: {
+              id: true,
+              name: true,
+              contactNumber: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    // Get ride details for recent strikes
+    const rideIds = allStrikesLast7Days.map((s) => s.rideId);
+    const rides = await prisma.ride.findMany({
+      where: {
+        id: { in: rideIds },
+      },
+      select: {
+        id: true,
+        rideCode: true,
+        status: true,
+        pickupAddress: true,
+        dropAddress: true,
+        cancellationReason: true,
+        driverStrikeType: true,
+        driverCompensationAmount: true,
+        cancelledAt: true,
+        createdAt: true,
+        rider: {
+          select: {
+            id: true,
+            name: true,
+            phoneNumber: true,
+          },
+        },
+      },
+    });
+
+    // Create a map of rideId -> ride for quick lookup
+    const rideMap = new Map(rides.map((r) => [r.id, r]));
+
+    // Check if driver should be blocked
+    const STRIKE_BLOCK_FULL = 3;
+    const STRIKE_BLOCK_LIGHT = 6;
+    const isBlocked = fullStrikesLast7Days >= STRIKE_BLOCK_FULL || lightStrikesLast7Days >= STRIKE_BLOCK_LIGHT;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        driver: {
+          id: driver.id,
+          name: driver.name,
+          contactNumber: driver.contactNumber,
+          approvalStatus: driver.approvalStatus,
+          accountActive: driver.accountActive,
+        },
+        strikes: {
+          last7Days: {
+            full: fullStrikesLast7Days,
+            light: lightStrikesLast7Days,
+            total: fullStrikesLast7Days + lightStrikesLast7Days,
+          },
+          allTime: {
+            total: totalStrikesAllTime.length,
+          },
+          limits: {
+            fullStrikeLimit: STRIKE_BLOCK_FULL,
+            lightStrikeLimit: STRIKE_BLOCK_LIGHT,
+            windowDays: 7,
+          },
+          isBlocked,
+          blockReason: isBlocked
+            ? fullStrikesLast7Days >= STRIKE_BLOCK_FULL
+              ? `Driver has ${fullStrikesLast7Days} full strikes (limit: ${STRIKE_BLOCK_FULL})`
+              : `Driver has ${lightStrikesLast7Days} light strikes (limit: ${STRIKE_BLOCK_LIGHT})`
+            : null,
+        },
+        recentStrikes: allStrikesLast7Days.map((strike) => {
+          const ride = rideMap.get(strike.rideId);
+          return {
+            id: strike.id,
+            rideId: strike.rideId,
+            rideCode: ride?.rideCode || null,
+            strikeType: strike.strikeType,
+            cancelledAt: strike.cancelledAt,
+            createdAt: strike.createdAt,
+            ride: ride
+              ? {
+                  pickupAddress: ride.pickupAddress,
+                  dropAddress: ride.dropAddress,
+                  cancellationReason: ride.cancellationReason,
+                  driverCompensationAmount: ride.driverCompensationAmount,
+                  rider: ride.rider
+                    ? {
+                        name: ride.rider.name,
+                        phoneNumber: ride.rider.phoneNumber,
+                      }
+                    : null,
+                }
+              : null,
+          };
+        }),
+        allTimeStrikes: totalStrikesAllTime.map((strike) => ({
+          id: strike.id,
+          rideId: strike.rideId,
+          strikeType: strike.strikeType,
+          cancelledAt: strike.cancelledAt,
+          createdAt: strike.createdAt,
+        })),
+      },
+    });
+  } catch (error: any) {
+    console.error("Error fetching driver strikes (admin):", error);
+    return next(new AppError("Failed to fetch driver cancellation strikes", 500));
+  }
+};

@@ -1203,3 +1203,100 @@ export const storeRideAcceptedFromGateway = async (
     return next(new AppError("Failed to store accepted ride", 500));
   }
 };
+
+/**
+ * Get cancellation strikes for authenticated driver
+ * GET /api/driver/strikes
+ * Returns strike counts, recent strikes, and blocking status
+ */
+export const getDriverStrikes = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    if (!req.driver?.id) {
+      return next(new AppError("Driver not authenticated", 401));
+    }
+
+    const driverId = req.driver.id as string;
+    const windowStart = new Date(Date.now() - STRIKE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+    // Get strike counts in the last 7 days
+    const [fullStrikes, lightStrikes, allStrikes] = await Promise.all([
+      prisma.driverCancellationStrike.count({
+        where: {
+          driverId,
+          strikeType: "full",
+          cancelledAt: { gte: windowStart },
+        },
+      }),
+      prisma.driverCancellationStrike.count({
+        where: {
+          driverId,
+          strikeType: "light",
+          cancelledAt: { gte: windowStart },
+        },
+      }),
+      prisma.driverCancellationStrike.findMany({
+        where: {
+          driverId,
+          cancelledAt: { gte: windowStart },
+        },
+        orderBy: { cancelledAt: "desc" },
+        take: 20, // Last 20 strikes
+        include: {
+          driver: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    // Check if driver is blocked
+    const isBlocked = fullStrikes >= STRIKE_BLOCK_FULL || lightStrikes >= STRIKE_BLOCK_LIGHT;
+    let blockMessage: string | undefined;
+    if (fullStrikes >= STRIKE_BLOCK_FULL) {
+      blockMessage = `You have ${fullStrikes} full cancellation strikes. Please contact support.`;
+    } else if (lightStrikes >= STRIKE_BLOCK_LIGHT) {
+      blockMessage = `You have ${lightStrikes} light cancellation strikes. Please contact support.`;
+    }
+
+    // Get total strikes (all time)
+    const totalStrikes = await prisma.driverCancellationStrike.count({
+      where: { driverId },
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        strikes: {
+          full: fullStrikes,
+          light: lightStrikes,
+          total: fullStrikes + lightStrikes,
+          totalAllTime: totalStrikes,
+        },
+        limits: {
+          fullStrikeLimit: STRIKE_BLOCK_FULL,
+          lightStrikeLimit: STRIKE_BLOCK_LIGHT,
+          windowDays: STRIKE_WINDOW_DAYS,
+        },
+        isBlocked,
+        blockMessage,
+        recentStrikes: allStrikes.map((strike) => ({
+          id: strike.id,
+          rideId: strike.rideId,
+          strikeType: strike.strikeType,
+          cancelledAt: strike.cancelledAt,
+          createdAt: strike.createdAt,
+        })),
+      },
+    });
+  } catch (error: any) {
+    console.error("Error fetching driver strikes:", error);
+    return next(new AppError("Failed to fetch cancellation strikes", 500));
+  }
+};
