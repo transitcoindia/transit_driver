@@ -56,7 +56,7 @@ import {
     getCurrentSubscription,
     getSubscriptionPlans,
 } from '../controllers/ride_controllers/subscription';
-import { getWalletBalance, getWalletTransactions } from '../controllers/ride_controllers/wallet';
+import { getWalletBalance, getWalletTransactions, createTopUpOrder, verifyTopUp } from '../controllers/ride_controllers/wallet';
 import { getReferralInfo } from '../controllers/ride_controllers/referral';
 import { updateDriverProfile, uploadDriverProfileImage, uploadVerificationSelfie } from '../controllers/auth_controllers/profile';
 import {
@@ -260,6 +260,8 @@ router.get('/subscription', authenticate as RequestHandler, getCurrentSubscripti
 // Wallet routes
 router.get('/wallet', authenticate as RequestHandler, getWalletBalance as RequestHandler);
 router.get('/wallet/transactions', authenticate as RequestHandler, getWalletTransactions as RequestHandler);
+router.post('/wallet/top-up/create-order', authenticate as RequestHandler, createTopUpOrder as RequestHandler);
+router.post('/wallet/top-up/verify', authenticate as RequestHandler, verifyTopUp as RequestHandler);
 
 // Referral routes
 router.get('/referral', authenticate as RequestHandler, getReferralInfo as RequestHandler);

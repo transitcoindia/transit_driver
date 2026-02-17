@@ -186,6 +186,8 @@ router.get('/subscription', authMiddle_1.authenticate, subscription_1.getCurrent
 // Wallet routes
 router.get('/wallet', authMiddle_1.authenticate, wallet_1.getWalletBalance);
 router.get('/wallet/transactions', authMiddle_1.authenticate, wallet_1.getWalletTransactions);
+router.post('/wallet/top-up/create-order', authMiddle_1.authenticate, wallet_1.createTopUpOrder);
+router.post('/wallet/top-up/verify', authMiddle_1.authenticate, wallet_1.verifyTopUp);
 // Referral routes
 router.get('/referral', authMiddle_1.authenticate, referral_1.getReferralInfo);
 // Admin routes for driver management
