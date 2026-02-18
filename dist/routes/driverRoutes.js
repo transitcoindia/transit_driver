@@ -165,6 +165,8 @@ router.post('/rides/:rideId/start', authMiddle_1.authenticate, rideManagement_1.
 router.post('/rides/:rideId/complete', authMiddle_1.authenticate, rideManagement_1.completeRide);
 router.post('/rides/:rideId/payment-received', authMiddle_1.authenticate, rideManagement_1.markPaymentReceived);
 router.post('/rides/:rideId/cancel', authMiddle_1.authenticate, rideManagement_1.cancelRide);
+// Strike routes
+router.get('/strikes', authMiddle_1.authenticate, rideManagement_1.getDriverStrikes);
 // Earnings routes
 router.get('/earnings', authMiddle_1.authenticate, earnings_1.getDriverEarnings);
 router.get('/earnings/breakdown', authMiddle_1.authenticate, earnings_1.getDriverEarningsBreakdown);
@@ -201,5 +203,6 @@ router.put('/admin/suspend/:driverId', authMiddle_1.authenticateAdmin, driverAdm
 router.get('/admin/suspend', driverAdmin_1.suspendDriver); // Email token-based suspension (optional)
 router.post('/admin/suspend', driverAdmin_1.suspendDriver); // Email token-based suspension (POST)
 router.patch('/admin/:driverId/approval', authMiddle_1.authenticateAdmin, driverAdmin_1.updateDriverApproval);
+router.get('/admin/strikes/:driverId', authMiddle_1.authenticateAdmin, driverAdmin_1.getDriverStrikesAdmin);
 exports.default = router;
 //# sourceMappingURL=driverRoutes.js.map

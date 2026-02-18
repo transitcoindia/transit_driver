@@ -702,6 +702,7 @@ export const markPaymentReceived = async (
 
 const getDriverLocationKey = (driverId: string) => `driver:location:${driverId}`;
 const getDriverActiveRideKey = (driverId: string) => `driver:active_ride:${driverId}`;
+const getDriverAvailabilityKey = (driverId: string) => `driver:${driverId}:availability`;
 
 /** Block driver from accepting if they have too many cancellation strikes in last 7 days */
 const STRIKE_BLOCK_FULL = 3;
@@ -970,6 +971,50 @@ export const cancelRide = async (
       await redis.del(getDriverActiveRideKey(driverId));
     } catch (e) {
       console.warn("Failed to clear driver active ride from Redis:", e);
+    }
+
+    // Restore driver availability if they were online before accepting
+    // This ensures drivers can receive new ride requests after cancellation
+    try {
+      const driverStatus = await prisma.driverStatus.findUnique({
+        where: { driverId },
+        select: { status: true },
+      });
+      
+      // If driver was online (or has ONLINE status), restore availability
+      const wasOnline = driverStatus?.status === "ONLINE";
+      
+      if (wasOnline || ride.vehicleId) {
+        // Restore driverDetails.isAvailable
+        await prisma.driverDetails.update({
+          where: { driverId },
+          data: { isAvailable: true },
+        });
+
+        // Restore Redis availability key (if driver was online)
+        if (wasOnline) {
+          const availabilityKey = getDriverAvailabilityKey(driverId);
+          const now = Date.now();
+          try {
+            await redis.set(
+              availabilityKey,
+              JSON.stringify({
+                driverId,
+                status: "ONLINE",
+                lastPing: now,
+                updatedAt: now,
+              }),
+              "EX",
+              60 // TTL: 60 seconds (matches DRIVER_AVAILABILITY_TTL_SECONDS)
+            );
+          } catch (redisError) {
+            console.warn("Failed to restore driver availability in Redis:", redisError);
+          }
+        }
+      }
+    } catch (availabilityError) {
+      console.warn("Failed to restore driver availability after cancellation:", availabilityError);
+      // Don't fail the cancellation if availability restoration fails
     }
 
     // Notify rider via transit_backend (push notification)
