@@ -23,6 +23,12 @@ const generateOTP = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
   };
 
+export const GOOGLE_PLAY_TEST_OTP = process.env.GOOGLE_PLAY_TEST_OTP || '123456';
+const isGooglePlayTestEmail = (email: string) =>
+  process.env.GOOGLE_PLAY_TEST_EMAIL && String(email).trim().toLowerCase() === process.env.GOOGLE_PLAY_TEST_EMAIL.trim().toLowerCase();
+const isGooglePlayTestPhone = (phone: string) =>
+  process.env.GOOGLE_PLAY_TEST_PHONE && String(phone).replace(/\D/g, '').slice(-10) === String(process.env.GOOGLE_PLAY_TEST_PHONE).replace(/\D/g, '').slice(-10);
+
 export const register = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const validatedData = driverSignupSchema.parse(req.body);
@@ -415,20 +421,23 @@ export const requestLoginOtp = async (req: Request, res: Response, next: NextFun
             if (!user.emailVerified) {
                 return res.status(403).json({ success: false, message: 'Please verify your email first' });
             }
-            const otp = generateOTP();
-            const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+            const isTestAccount = isGooglePlayTestEmail(emailStr);
+            const otp = isTestAccount ? GOOGLE_PLAY_TEST_OTP : generateOTP();
+            const expiresAt = new Date(Date.now() + (isTestAccount ? 24 * 60 * 60 * 1000 : 10 * 60 * 1000)); // test: 24h, normal: 10 min
             await prisma.verification.deleteMany({ where: { identifier: emailStr } });
             await prisma.verification.create({
                 data: { identifier: emailStr, value: otp, expiresAt },
             });
-            try {
-                await sendDriverOtpEmail(emailStr, otp, 'login');
-            } catch (e) {
-                console.error('Failed to send login OTP via email:', e);
+            if (!isTestAccount) {
+                try {
+                    await sendDriverOtpEmail(emailStr, otp, 'login');
+                } catch (e) {
+                    console.error('Failed to send login OTP via email:', e);
+                }
             }
             return res.status(200).json({
                 success: true,
-                message: 'OTP sent to your email',
+                message: isTestAccount ? 'Use the test OTP in the app.' : 'OTP sent to your email',
             });
         }
 
@@ -443,18 +452,21 @@ export const requestLoginOtp = async (req: Request, res: Response, next: NextFun
         if (!user.phoneNumberVerified) {
             return res.status(403).json({ success: false, message: 'Please verify your phone number first' });
         }
-        const otp = generateOTP();
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        const isTestAccount = isGooglePlayTestPhone(phone);
+        const otp = isTestAccount ? GOOGLE_PLAY_TEST_OTP : generateOTP();
+        const expiresAt = new Date(Date.now() + (isTestAccount ? 24 * 60 * 60 * 1000 : 10 * 60 * 1000));
         await prisma.otp.deleteMany({ where: { phoneNumber: phone } });
         await prisma.otp.create({ data: { phoneNumber: phone, otp, expiresAt } });
-        try {
-            await sendOtp(phone, otp);
-        } catch (e) {
-            console.error('Failed to send login OTP via Fast2SMS:', e);
+        if (!isTestAccount) {
+            try {
+                await sendOtp(phone, otp);
+            } catch (e) {
+                console.error('Failed to send login OTP via Fast2SMS:', e);
+            }
         }
         return res.status(200).json({
             success: true,
-            message: 'OTP sent to your phone number',
+            message: isTestAccount ? 'Use the test OTP in the app.' : 'OTP sent to your phone number',
         });
     } catch (error) {
         return next(new AppError('An error occurred while sending OTP', 500));
