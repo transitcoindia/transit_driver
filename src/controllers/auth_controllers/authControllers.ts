@@ -13,6 +13,10 @@ import { OAuth2Client } from 'google-auth-library';
 import { addHours, isAfter } from 'date-fns';
 import { generateUserId } from '../../utils/generateUserId';
 import { generateReferralCode } from '../../utils/generateReferralCode';
+import redis from '../../redis';
+
+const getDriverAvailabilityKey = (driverId: string) =>
+  `driver:${driverId}:availability`;
 
 const client = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
@@ -716,8 +720,50 @@ export const getUserDetails = async (req: Request, res: Response, next: NextFunc
         const lastName = lastNameParts.join(' ');
 
         const loc = driver.driverLocation as { isOnline?: boolean } | null;
-        const isOnline = loc?.isOnline === true;
-        const isAvailable = driver.driverDetails?.isAvailable === true;
+        const driverId = driver.id as string;
+
+        // DB can be "online" while Redis presence is gone (app killed, uninstalled, or heartbeat stopped).
+        // Matching uses Redis; sync DB to offline so profile and dispatch stay consistent.
+        let redisPresence = true;
+        const redisConnected = redis.client != null;
+        if (redisConnected) {
+          try {
+            const raw = await redis.get(getDriverAvailabilityKey(driverId));
+            redisPresence = !!raw;
+          } catch {
+            redisPresence = true;
+          }
+        }
+
+        let isOnline = loc?.isOnline === true;
+        let isAvailable = driver.driverDetails?.isAvailable === true;
+
+        if (isAvailable && !redisPresence && redisConnected) {
+          try {
+            await prisma.$transaction(async (tx) => {
+              await tx.driverDetails.updateMany({
+                where: { driverId },
+                data: { isAvailable: false },
+              });
+              await tx.driverLocation.updateMany({
+                where: { driverId },
+                data: { isOnline: false, isAvailable: false },
+              });
+              await tx.driverStatus.updateMany({
+                where: { driverId },
+                data: { status: 'OFFLINE', sessionStartedAt: null },
+              });
+              await tx.vehicle.updateMany({
+                where: { driverId },
+                data: { isAvailable: false },
+              });
+            });
+            isOnline = false;
+            isAvailable = false;
+          } catch (e) {
+            console.warn('[getUserDetails] stale online sync failed:', e);
+          }
+        }
         // Map vehicle type for subscription filtering: sedan/suv/hatchback -> CAR, bike -> BIKE, auto -> AUTO
         const rawVehicleType = (driver as any).vehicle?.[0]?.vehicleType?.toLowerCase?.();
         let vehicleTypeForPlans: string | null = null;
@@ -732,9 +778,11 @@ export const getUserDetails = async (req: Request, res: Response, next: NextFunc
             ...driver.driverDetails,
             rating: driver.averageRating ?? driver.driverDetails?.rating ?? 0,
             totalRides: driver.totalRatings ?? driver.driverDetails?.totalRides ?? 0,
+            isAvailable,
         } : {
             rating: driver.averageRating ?? 0,
             totalRides: driver.totalRatings ?? 0,
+            isAvailable,
         };
 
         return res.status(200).json({

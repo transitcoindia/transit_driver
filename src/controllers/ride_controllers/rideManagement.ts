@@ -1138,9 +1138,10 @@ export const storeRideAcceptedFromGateway = async (
 
     if (existingRide) {
       if (existingRide.driverId && existingRide.driverId !== driverId) {
-        return res.status(200).json({
-          success: true,
-          message: "Ride already assigned to another driver",
+        return res.status(409).json({
+          success: false,
+          error: "Ride already assigned to another driver",
+          code: "RIDE_ALREADY_ASSIGNED",
         });
       }
       const acceptedAt = new Date();
