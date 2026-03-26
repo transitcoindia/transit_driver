@@ -1,21 +1,21 @@
 import { z } from 'zod';
 export declare const driverSignupSchema: z.ZodObject<{
-    email: z.ZodString;
+    email: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodLiteral<"">]>>;
     firstName: z.ZodString;
     lastName: z.ZodString;
     phoneNumber: z.ZodEffects<z.ZodString, string, string>;
     referralCode: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    email: string;
     phoneNumber: string;
     firstName: string;
     lastName: string;
+    email?: string | undefined;
     referralCode?: string | undefined;
 }, {
-    email: string;
     phoneNumber: string;
     firstName: string;
     lastName: string;
+    email?: string | undefined;
     referralCode?: string | undefined;
 }>;
 export declare const driverVehicleInfoSchema: z.ZodObject<{

@@ -37,16 +37,18 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
     try {
         const validatedData = driverSignupSchema.parse(req.body);
         let { email, firstName, lastName, phoneNumber, referralCode } = validatedData;
-        email = String(email).trim();
+        email = (email && String(email).trim()) || '';
         phoneNumber = String(phoneNumber).replace(/\D/g, "").slice(-10);
         const refCode = referralCode && String(referralCode).trim().toUpperCase() ? String(referralCode).trim().toUpperCase() : null;
 
-        const normalizedEmail = email;
+        const normalizedEmail = email || `driver+91${phoneNumber}@driver.placeholder`;
         const normalizedPhone = phoneNumber;
 
-        const existingEmail = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-        if (existingEmail) {
-            return next(new AppError('Email already exists', 400));
+        if (email) {
+            const existingEmail = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+            if (existingEmail) {
+                return next(new AppError('Email already exists', 400));
+            }
         }
         const existingPhone = await prisma.user.findFirst({ where: { phoneNumber: normalizedPhone } });
         if (existingPhone) {
@@ -95,25 +97,9 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
         });
 
         const phoneOtp = generateOTP();
-        const emailOtp = generateOTP();
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
         const channelsSent: string[] = [];
-        await prisma.verification.deleteMany({ where: { identifier: normalizedEmail } });
-        await prisma.verification.create({
-            data: {
-                identifier: normalizedEmail,
-                value: emailOtp,
-                expiresAt,
-            },
-        });
-        try {
-            await sendDriverOtpEmail(normalizedEmail, emailOtp, 'registration');
-            channelsSent.push('email');
-        } catch (e) {
-            console.error('Failed to send registration OTP via email:', e);
-        }
-
         await prisma.otp.deleteMany({ where: { phoneNumber: user.phoneNumber! } });
         await prisma.otp.create({
             data: { phoneNumber: user.phoneNumber!, otp: phoneOtp, expiresAt },
@@ -125,7 +111,7 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
             console.error('Failed to send registration OTP via Fast2SMS:', e);
         }
 
-        const verifyHint = 'Verify your email and phone with the OTPs sent. You must verify both to finish signup.';
+        const verifyHint = 'Verify your phone with the OTP sent.';
 
         return res.status(201).json({
             success: true,
@@ -133,13 +119,13 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
             data: {
                 driver: {
                     id: driver.id,
-                    email: normalizedEmail,
+                    email: email || null,
                     name: driver.name,
                     phoneNumber: driver.user?.phoneNumber || null,
                     emailVerified: driver.user?.emailVerified || false,
                     phoneNumberVerified: driver.user?.phoneNumberVerified || false,
                 },
-                verifyWith: channelsSent,
+                verifyWith: ['phone'],
             },
         });
     } catch (error) {
@@ -337,38 +323,13 @@ export const verifyRegistrationOTP = async (req: Request, res: Response, next: N
             return next(new AppError('Driver not found', 404));
         }
 
-        const emailOk = userFresh.emailVerified === true;
         const phoneOk = userFresh.phoneNumberVerified === true;
-        const fullyVerified = emailOk && phoneOk;
-
-        if (!fullyVerified) {
-            const nextStep = !emailOk ? 'email' : 'phone';
-            return res.status(200).json({
-                success: true,
-                signupIncomplete: true,
-                nextStep,
-                message:
-                    nextStep === 'email'
-                        ? 'Enter the OTP sent to your email to finish signup.'
-                        : 'Enter the OTP sent to your phone to finish signup.',
-                token: null,
-                data: {
-                    driver: {
-                        id: userFresh.driver.id,
-                        name: userFresh.driver.name,
-                        email: userFresh.email,
-                        phoneNumber: userFresh.phoneNumber,
-                        emailVerified: userFresh.emailVerified,
-                        phoneNumberVerified: userFresh.phoneNumberVerified,
-                        driverDetails: userFresh.driver.driverDetails,
-                        driverStatus: userFresh.driver.driverStatus,
-                    },
-                },
-            });
+        if (!phoneOk) {
+            return next(new AppError('Phone verification required', 400));
         }
 
         const accessToken = generateAccessToken(user.driver.id);
-        const message = 'Signup complete. Email and phone verified.';
+        const message = 'Signup complete. Phone verified.';
 
         return res.status(200).json({
             success: true,

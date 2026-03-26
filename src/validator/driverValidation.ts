@@ -1,9 +1,9 @@
 import { isValidPhoneNumber } from 'libphonenumber-js';
 import { z } from 'zod';
 
-// Driver signup – email and phone are both required. No password – login via OTP only.
+// Driver signup – phone required, email optional. No password – login via OTP only.
 export const driverSignupSchema = z.object({
-    email: z.string().email("Valid email is required"),
+    email: z.union([z.string().email("Valid email when provided"), z.literal("")]).optional(),
     firstName: z.string().min(1, "First name is required"),
     lastName: z.string().min(1, "Last name is required"),
     phoneNumber: z

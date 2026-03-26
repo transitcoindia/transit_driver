@@ -3,9 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.subscriptionActivateSchema = exports.verificationTokenSchema = exports.multipleDocumentDataSchema = exports.driverDocumentSchema = exports.driverVehicleInfoSchema = exports.driverSignupSchema = void 0;
 const libphonenumber_js_1 = require("libphonenumber-js");
 const zod_1 = require("zod");
-// Driver signup – email and phone are both required. No password – login via OTP only.
+// Driver signup – phone required, email optional. No password – login via OTP only.
 exports.driverSignupSchema = zod_1.z.object({
-    email: zod_1.z.string().email("Valid email is required"),
+    email: zod_1.z.union([zod_1.z.string().email("Valid email when provided"), zod_1.z.literal("")]).optional(),
     firstName: zod_1.z.string().min(1, "First name is required"),
     lastName: zod_1.z.string().min(1, "Last name is required"),
     phoneNumber: zod_1.z
