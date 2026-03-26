@@ -1,25 +1,18 @@
 import { isValidPhoneNumber } from 'libphonenumber-js';
 import { z } from 'zod';
 
-// Driver signup – at least one of email or phone. No password – login via OTP only.
+// Driver signup – email and phone are both required. No password – login via OTP only.
 export const driverSignupSchema = z.object({
-    email: z.union([z.string().email("Valid email when provided"), z.literal("")]).optional(),
+    email: z.string().email("Valid email is required"),
     firstName: z.string().min(1, "First name is required"),
     lastName: z.string().min(1, "Last name is required"),
     phoneNumber: z
         .string()
-        .optional()
-        .refine((phone) => !phone || phone.replace(/\D/g, "").length < 10 || isValidPhoneNumber("+91" + phone.replace(/\D/g, "").slice(-10)), {
+        .min(1, "Phone number is required")
+        .refine((phone) => phone.replace(/\D/g, "").length >= 10 && isValidPhoneNumber("+91" + phone.replace(/\D/g, "").slice(-10)), {
             message: "Invalid phone number",
         }),
     referralCode: z.string().min(1).max(20).optional(),
-}).refine((data) => {
-    const hasEmail = data.email && String(data.email).trim().length > 0;
-    const hasPhone = data.phoneNumber && String(data.phoneNumber).replace(/\D/g, "").length >= 10;
-    return hasEmail || hasPhone;
-}, {
-    message: "At least one of email or phone number is required",
-    path: ["email"],
 });
 
 // Vehicle information validation schema

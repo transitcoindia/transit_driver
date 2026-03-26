@@ -3,25 +3,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.subscriptionActivateSchema = exports.verificationTokenSchema = exports.multipleDocumentDataSchema = exports.driverDocumentSchema = exports.driverVehicleInfoSchema = exports.driverSignupSchema = void 0;
 const libphonenumber_js_1 = require("libphonenumber-js");
 const zod_1 = require("zod");
-// Driver signup – at least one of email or phone. No password – login via OTP only.
+// Driver signup – email and phone are both required. No password – login via OTP only.
 exports.driverSignupSchema = zod_1.z.object({
-    email: zod_1.z.union([zod_1.z.string().email("Valid email when provided"), zod_1.z.literal("")]).optional(),
+    email: zod_1.z.string().email("Valid email is required"),
     firstName: zod_1.z.string().min(1, "First name is required"),
     lastName: zod_1.z.string().min(1, "Last name is required"),
     phoneNumber: zod_1.z
         .string()
-        .optional()
-        .refine((phone) => !phone || phone.replace(/\D/g, "").length < 10 || (0, libphonenumber_js_1.isValidPhoneNumber)("+91" + phone.replace(/\D/g, "").slice(-10)), {
+        .min(1, "Phone number is required")
+        .refine((phone) => phone.replace(/\D/g, "").length >= 10 && (0, libphonenumber_js_1.isValidPhoneNumber)("+91" + phone.replace(/\D/g, "").slice(-10)), {
         message: "Invalid phone number",
     }),
     referralCode: zod_1.z.string().min(1).max(20).optional(),
-}).refine((data) => {
-    const hasEmail = data.email && String(data.email).trim().length > 0;
-    const hasPhone = data.phoneNumber && String(data.phoneNumber).replace(/\D/g, "").length >= 10;
-    return hasEmail || hasPhone;
-}, {
-    message: "At least one of email or phone number is required",
-    path: ["email"],
 });
 // Vehicle information validation schema
 // `vehicleType` is optional – when provided from the app (Auto/Bike/Car/SUV),
