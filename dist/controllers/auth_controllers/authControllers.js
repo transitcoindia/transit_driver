@@ -35,55 +35,107 @@ const register = async (req, res, next) => {
         email = (email && String(email).trim()) || '';
         phoneNumber = String(phoneNumber).replace(/\D/g, "").slice(-10);
         const refCode = referralCode && String(referralCode).trim().toUpperCase() ? String(referralCode).trim().toUpperCase() : null;
-        const normalizedEmail = email || `driver+91${phoneNumber}@driver.placeholder`;
+        const emailTrim = email ? String(email).trim().toLowerCase() : '';
+        const placeholderEmail = `driver+91${phoneNumber}@driver.placeholder`;
         const normalizedPhone = phoneNumber;
-        if (email) {
-            const existingEmail = await prismaClient_1.prisma.user.findUnique({ where: { email: normalizedEmail } });
-            if (existingEmail) {
+        const existingByPhone = await prismaClient_1.prisma.user.findFirst({
+            where: { phoneNumber: normalizedPhone },
+            include: { driver: true },
+        });
+        if (existingByPhone?.driver) {
+            return next(new AppError_1.default('This phone number is already registered as a driver', 400));
+        }
+        let user;
+        let driver;
+        let linkedExistingRider = false;
+        if (existingByPhone && !existingByPhone.driver) {
+            // Same person already has a rider account — add driver profile (one User row)
+            linkedExistingRider = true;
+            let targetEmail = existingByPhone.email;
+            if (emailTrim) {
+                const conflict = await prismaClient_1.prisma.user.findFirst({
+                    where: { email: emailTrim, NOT: { id: existingByPhone.id } },
+                });
+                if (conflict) {
+                    return next(new AppError_1.default('Email already in use by another account', 400));
+                }
+                targetEmail = emailTrim;
+            }
+            const hashedPassword = await bcrypt_1.default.hash((0, crypto_1.randomBytes)(32).toString('hex'), 10);
+            let referredByDriverId = null;
+            if (refCode) {
+                const referrer = await prismaClient_1.prisma.driver.findFirst({ where: { referralCode: refCode }, select: { id: true } });
+                if (referrer)
+                    referredByDriverId = referrer.id;
+            }
+            const newReferralCode = await (0, generateReferralCode_1.generateReferralCode)(prismaClient_1.prisma);
+            user = await prismaClient_1.prisma.user.update({
+                where: { id: existingByPhone.id },
+                data: {
+                    isDriver: true,
+                    name: `${firstName} ${lastName}`,
+                    password: hashedPassword,
+                    email: targetEmail,
+                    updatedAt: new Date(),
+                },
+            });
+            driver = await prismaClient_1.prisma.driver.create({
+                data: {
+                    userId: user.id,
+                    name: `${firstName} ${lastName}`,
+                    referralCode: newReferralCode,
+                    referredByDriverId,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                },
+                include: {
+                    user: true,
+                },
+            });
+        }
+        else {
+            const normalizedEmail = emailTrim || placeholderEmail;
+            const existingByEmail = await prismaClient_1.prisma.user.findUnique({ where: { email: normalizedEmail } });
+            if (existingByEmail) {
                 return next(new AppError_1.default('Email already exists', 400));
             }
+            const hashedPassword = await bcrypt_1.default.hash((0, crypto_1.randomBytes)(32).toString('hex'), 10);
+            const customId = await (0, generateUserId_1.generateUserId)(prismaClient_1.prisma, false, true);
+            let referredByDriverId = null;
+            if (refCode) {
+                const referrer = await prismaClient_1.prisma.driver.findFirst({ where: { referralCode: refCode }, select: { id: true } });
+                if (referrer)
+                    referredByDriverId = referrer.id;
+            }
+            const newReferralCode = await (0, generateReferralCode_1.generateReferralCode)(prismaClient_1.prisma);
+            user = await prismaClient_1.prisma.user.create({
+                data: {
+                    id: customId,
+                    email: normalizedEmail,
+                    name: `${firstName} ${lastName}`,
+                    password: hashedPassword,
+                    emailVerified: false,
+                    phoneNumber: normalizedPhone,
+                    phoneNumberVerified: false,
+                    isDriver: true,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                },
+            });
+            driver = await prismaClient_1.prisma.driver.create({
+                data: {
+                    userId: user.id,
+                    name: `${firstName} ${lastName}`,
+                    referralCode: newReferralCode,
+                    referredByDriverId,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                },
+                include: {
+                    user: true,
+                },
+            });
         }
-        const existingPhone = await prismaClient_1.prisma.user.findFirst({ where: { phoneNumber: normalizedPhone } });
-        if (existingPhone) {
-            return next(new AppError_1.default('Phone number already exists', 400));
-        }
-        const hashedPassword = await bcrypt_1.default.hash((0, crypto_1.randomBytes)(32).toString('hex'), 10);
-        const customId = await (0, generateUserId_1.generateUserId)(prismaClient_1.prisma, false, true);
-        // Resolve referrer by referral code (if provided)
-        let referredByDriverId = null;
-        if (refCode) {
-            const referrer = await prismaClient_1.prisma.driver.findFirst({ where: { referralCode: refCode }, select: { id: true } });
-            if (referrer)
-                referredByDriverId = referrer.id;
-        }
-        const newReferralCode = await (0, generateReferralCode_1.generateReferralCode)(prismaClient_1.prisma);
-        const user = await prismaClient_1.prisma.user.create({
-            data: {
-                id: customId,
-                email: normalizedEmail,
-                name: `${firstName} ${lastName}`,
-                password: hashedPassword,
-                emailVerified: false,
-                phoneNumber: normalizedPhone,
-                phoneNumberVerified: false,
-                isDriver: true,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            },
-        });
-        const driver = await prismaClient_1.prisma.driver.create({
-            data: {
-                userId: user.id,
-                name: `${firstName} ${lastName}`,
-                referralCode: newReferralCode,
-                referredByDriverId,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            },
-            include: {
-                user: true,
-            },
-        });
         const phoneOtp = generateOTP();
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
         const channelsSent = [];
@@ -99,17 +151,21 @@ const register = async (req, res, next) => {
             console.error('Failed to send registration OTP via Fast2SMS:', e);
         }
         const verifyHint = 'Verify your phone with the OTP sent.';
+        const createdMsg = linkedExistingRider
+            ? `Driver profile added to your existing account. ${verifyHint}`
+            : `Driver account created. ${verifyHint}`;
         return res.status(201).json({
             success: true,
-            message: `Driver account created. ${verifyHint}`,
+            message: createdMsg,
             data: {
+                linkedExistingRider,
                 driver: {
                     id: driver.id,
                     email: email || null,
                     name: driver.name,
-                    phoneNumber: driver.user?.phoneNumber || null,
-                    emailVerified: driver.user?.emailVerified || false,
-                    phoneNumberVerified: driver.user?.phoneNumberVerified || false,
+                    phoneNumber: user.phoneNumber || null,
+                    emailVerified: user.emailVerified || false,
+                    phoneNumberVerified: user.phoneNumberVerified || false,
                 },
                 verifyWith: ['phone'],
             },

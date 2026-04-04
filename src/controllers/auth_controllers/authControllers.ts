@@ -41,60 +41,116 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
         phoneNumber = String(phoneNumber).replace(/\D/g, "").slice(-10);
         const refCode = referralCode && String(referralCode).trim().toUpperCase() ? String(referralCode).trim().toUpperCase() : null;
 
-        const normalizedEmail = email || `driver+91${phoneNumber}@driver.placeholder`;
+        const emailTrim = email ? String(email).trim().toLowerCase() : '';
+        const placeholderEmail = `driver+91${phoneNumber}@driver.placeholder`;
         const normalizedPhone = phoneNumber;
 
-        if (email) {
-            const existingEmail = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-            if (existingEmail) {
+        const existingByPhone = await prisma.user.findFirst({
+            where: { phoneNumber: normalizedPhone },
+            include: { driver: true },
+        });
+
+        if (existingByPhone?.driver) {
+            return next(new AppError('This phone number is already registered as a driver', 400));
+        }
+
+        let user: { id: string; phoneNumber: string | null; emailVerified: boolean; phoneNumberVerified: boolean | null };
+        let driver: { id: string; name: string };
+        let linkedExistingRider = false;
+
+        if (existingByPhone && !existingByPhone.driver) {
+            // Same person already has a rider account — add driver profile (one User row)
+            linkedExistingRider = true;
+            let targetEmail = existingByPhone.email;
+            if (emailTrim) {
+                const conflict = await prisma.user.findFirst({
+                    where: { email: emailTrim, NOT: { id: existingByPhone.id } },
+                });
+                if (conflict) {
+                    return next(new AppError('Email already in use by another account', 400));
+                }
+                targetEmail = emailTrim;
+            }
+
+            const hashedPassword = await bcrypt.hash(randomBytes(32).toString('hex'), 10);
+            let referredByDriverId: string | null = null;
+            if (refCode) {
+                const referrer = await prisma.driver.findFirst({ where: { referralCode: refCode }, select: { id: true } });
+                if (referrer) referredByDriverId = referrer.id;
+            }
+            const newReferralCode = await generateReferralCode(prisma);
+
+            user = await prisma.user.update({
+                where: { id: existingByPhone.id },
+                data: {
+                    isDriver: true,
+                    name: `${firstName} ${lastName}`,
+                    password: hashedPassword,
+                    email: targetEmail,
+                    updatedAt: new Date(),
+                },
+            });
+
+            driver = await prisma.driver.create({
+                data: {
+                    userId: user.id,
+                    name: `${firstName} ${lastName}`,
+                    referralCode: newReferralCode,
+                    referredByDriverId,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                },
+                include: {
+                    user: true,
+                },
+            });
+        } else {
+            const normalizedEmail = emailTrim || placeholderEmail;
+            const existingByEmail = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+            if (existingByEmail) {
                 return next(new AppError('Email already exists', 400));
             }
+
+            const hashedPassword = await bcrypt.hash(randomBytes(32).toString('hex'), 10);
+            const customId = await generateUserId(prisma, false, true);
+
+            let referredByDriverId: string | null = null;
+            if (refCode) {
+                const referrer = await prisma.driver.findFirst({ where: { referralCode: refCode }, select: { id: true } });
+                if (referrer) referredByDriverId = referrer.id;
+            }
+
+            const newReferralCode = await generateReferralCode(prisma);
+
+            user = await prisma.user.create({
+                data: {
+                    id: customId,
+                    email: normalizedEmail,
+                    name: `${firstName} ${lastName}`,
+                    password: hashedPassword,
+                    emailVerified: false,
+                    phoneNumber: normalizedPhone as string,
+                    phoneNumberVerified: false,
+                    isDriver: true,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                },
+            });
+
+            driver = await prisma.driver.create({
+                data: {
+                    userId: user.id,
+                    name: `${firstName} ${lastName}`,
+                    referralCode: newReferralCode,
+                    referredByDriverId,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                },
+                include: {
+                    user: true,
+                },
+            });
         }
-        const existingPhone = await prisma.user.findFirst({ where: { phoneNumber: normalizedPhone } });
-        if (existingPhone) {
-            return next(new AppError('Phone number already exists', 400));
-        }
-
-        const hashedPassword = await bcrypt.hash(randomBytes(32).toString('hex'), 10);
-        const customId = await generateUserId(prisma, false, true);
-
-        // Resolve referrer by referral code (if provided)
-        let referredByDriverId: string | null = null;
-        if (refCode) {
-            const referrer = await prisma.driver.findFirst({ where: { referralCode: refCode }, select: { id: true } });
-            if (referrer) referredByDriverId = referrer.id;
-        }
-
-        const newReferralCode = await generateReferralCode(prisma);
-
-        const user = await prisma.user.create({
-            data: {
-                id: customId,
-                email: normalizedEmail,
-                name: `${firstName} ${lastName}`,
-                password: hashedPassword,
-                emailVerified: false,
-                phoneNumber: normalizedPhone as string,
-                phoneNumberVerified: false,
-                isDriver: true,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            },
-        });
-
-        const driver = await prisma.driver.create({
-            data: {
-                userId: user.id,
-                name: `${firstName} ${lastName}`,
-                referralCode: newReferralCode,
-                referredByDriverId,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            },
-            include: {
-                user: true,
-            },
-        });
 
         const phoneOtp = generateOTP();
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
@@ -112,18 +168,22 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
         }
 
         const verifyHint = 'Verify your phone with the OTP sent.';
+        const createdMsg = linkedExistingRider
+            ? `Driver profile added to your existing account. ${verifyHint}`
+            : `Driver account created. ${verifyHint}`;
 
         return res.status(201).json({
             success: true,
-            message: `Driver account created. ${verifyHint}`,
+            message: createdMsg,
             data: {
+                linkedExistingRider,
                 driver: {
                     id: driver.id,
                     email: email || null,
                     name: driver.name,
-                    phoneNumber: driver.user?.phoneNumber || null,
-                    emailVerified: driver.user?.emailVerified || false,
-                    phoneNumberVerified: driver.user?.phoneNumberVerified || false,
+                    phoneNumber: user.phoneNumber || null,
+                    emailVerified: user.emailVerified || false,
+                    phoneNumberVerified: user.phoneNumberVerified || false,
                 },
                 verifyWith: ['phone'],
             },
