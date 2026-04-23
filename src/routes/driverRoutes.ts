@@ -70,6 +70,7 @@ import {
   getSosLive,
 } from '../controllers/auth_controllers/emergency';
 import { registerFcmToken } from '../controllers/auth_controllers/fcmToken';
+import { getDriverHomePopupCampaign } from '../controllers/auth_controllers/campaign';
 import { getDocumentStatus, getVehicleImages, uploadDocuments, createOrUpdateVehicleInfo, uploadVehicleImages } from '../controllers/auth_controllers/documents';
 import { authenticate, authenticateAdmin } from '../middleware/authMiddle';
 import { broadcastRideRequest } from '../controllers/ride_controllers/broadcastRideRequest';
@@ -191,6 +192,11 @@ router.post('/auth/google', (googleAuth as unknown) as RequestHandler);
 
 // Protected routes
 router.post('/fcm-token', authenticate as RequestHandler, registerFcmToken as RequestHandler);
+router.get(
+  '/campaigns/home-popup',
+  authenticate as RequestHandler,
+  getDriverHomePopupCampaign as RequestHandler
+);
 router.get('/profile', authenticate as RequestHandler, getUserDetails as RequestHandler);
 router.put('/profile', authenticate as RequestHandler, updateDriverProfile as RequestHandler);
 router.post('/profile/request-phone-otp', authenticate as RequestHandler, requestProfilePhoneOtp as RequestHandler);
