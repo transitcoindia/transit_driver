@@ -38,18 +38,15 @@ exports.driverVehicleInfoSchema = zod_1.z.object({
 // Driver document upload validation schema
 exports.driverDocumentSchema = zod_1.z.object({
     documentType: zod_1.z.enum([
-        "DRIVING_LICENSE",
-        "VEHICLE_REGISTRATION",
-        "INSURANCE"
+        "DRIVING_LICENSE"
     ]),
     documentNumber: zod_1.z.string(),
     aadharNumber: zod_1.z.string()
         .regex(/^\d{12}$/, "Aadhaar number must be 12 digits"),
-    panNumber: zod_1.z.string()
-        .regex(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, "PAN number must be in valid format (e.g., ABCDE1234F)"),
+    panNumber: zod_1.z.string().optional(),
     driverLicenseNumber: zod_1.z.string(),
-    rcNumber: zod_1.z.string(),
-    insuranceNumber: zod_1.z.string(),
+    rcNumber: zod_1.z.string().optional(),
+    insuranceNumber: zod_1.z.string().optional(),
     expiryDate: zod_1.z.string().refine((val) => {
         if (!val)
             return true;
@@ -63,10 +60,6 @@ exports.driverDocumentSchema = zod_1.z.object({
     if (data.documentType === "DRIVING_LICENSE" && !data.driverLicenseNumber) {
         return false;
     }
-    // When document type is VEHICLE_REGISTRATION, require RC number
-    if (data.documentType === "VEHICLE_REGISTRATION" && !data.rcNumber) {
-        return false;
-    }
     return true;
 }, {
     message: "Required document number missing for the selected document type",
@@ -75,9 +68,7 @@ exports.driverDocumentSchema = zod_1.z.object({
 // Document data for multiple document upload
 exports.multipleDocumentDataSchema = zod_1.z.array(zod_1.z.object({
     documentType: zod_1.z.enum([
-        "DRIVING_LICENSE",
-        "VEHICLE_REGISTRATION",
-        "INSURANCE"
+        "DRIVING_LICENSE"
     ]),
     documentNumber: zod_1.z.string().optional(),
     driverLicenseNumber: zod_1.z.string().optional(),
@@ -87,10 +78,6 @@ exports.multipleDocumentDataSchema = zod_1.z.array(zod_1.z.object({
     return items.every(item => {
         // When document type is DRIVING_LICENSE, require driver license number
         if (item.documentType === "DRIVING_LICENSE" && !item.driverLicenseNumber) {
-            return false;
-        }
-        // When document type is VEHICLE_REGISTRATION, require RC number
-        if (item.documentType === "VEHICLE_REGISTRATION" && !item.rcNumber) {
             return false;
         }
         return true;

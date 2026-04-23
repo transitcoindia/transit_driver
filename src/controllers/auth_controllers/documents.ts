@@ -39,12 +39,8 @@ export const getDocumentStatus = async (
       });
     }
 
-    // Required document types
-    const requiredDocTypes = [
-      "DRIVING_LICENSE",
-      "VEHICLE_REGISTRATION",
-      "INSURANCE",
-    ];
+    // Required document types for onboarding (simplified flow)
+    const requiredDocTypes = ["DRIVING_LICENSE"];
 
     // Check which documents are uploaded and verified
     const docStatus: any = {};
@@ -90,7 +86,6 @@ export const getDocumentStatus = async (
         allDocumentsVerified: allVerified,
         governmentIds: {
           aadharNumber: driver.aadharNumber,
-          panNumber: driver.panNumber,
         },
       },
     });
@@ -247,12 +242,8 @@ export const uploadDocuments = async (
       );
     }
 
-    // Check for required document types
-    const requiredDocTypes = [
-      "DRIVING_LICENSE",
-      "VEHICLE_REGISTRATION",
-      "INSURANCE",
-    ];
+    // Check for required document types (simplified onboarding)
+    const requiredDocTypes = ["DRIVING_LICENSE"];
     const uploadedDocTypes = documentData.map((doc) => doc.documentType);
 
     // Verify all required document types are included
@@ -262,9 +253,7 @@ export const uploadDocuments = async (
     if (missingDocTypes.length > 0) {
       return next(
         new AppError(
-          `Missing required document types: ${missingDocTypes.join(
-            ", "
-          )}. All three document types are required.`,
+          `Missing required document types: ${missingDocTypes.join(", ")}.`,
           400
         )
       );
@@ -382,13 +371,12 @@ export const uploadDocuments = async (
       }
     }
 
-    // Update Government IDs if provided
-    if (req.body.aadharNumber || req.body.panNumber) {
+    // Update government IDs if provided (PAN is no longer required)
+    if (req.body.aadharNumber) {
       await prisma.driver.update({
         where: { id: driverId },
         data: {
           aadharNumber: req.body.aadharNumber || undefined,
-          panNumber: req.body.panNumber || undefined,
         },
       });
     }
@@ -735,11 +723,13 @@ export const createOrUpdateVehicleInfo = async (
       drivingExperience,
       vehicleType,
     } = validatedData;
-
     // Check if vehicle already exists for this driver
     const existingVehicle = await prisma.vehicle.findUnique({
       where: { driverId: driverId },
     });
+
+    const normalizedLicenseNumber =
+      typeof number === "string" ? number.trim().toUpperCase() : number;
 
     // Determine vehicle type:
     // 1) Prefer explicit vehicleType from request (normalized)
@@ -773,7 +763,7 @@ export const createOrUpdateVehicleInfo = async (
       make: brand,
       model: model,
       year: year,
-      licensePlate: number,
+      licensePlate: normalizedLicenseNumber,
       vehicleType: effectiveVehicleType,
       fuelType: fuelType,
       seatingCapacity: seatingCapacity,

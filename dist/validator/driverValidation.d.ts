@@ -65,77 +65,77 @@ export declare const driverVehicleInfoSchema: z.ZodObject<{
     registrationExpiryDate?: string | undefined;
 }>;
 export declare const driverDocumentSchema: z.ZodEffects<z.ZodObject<{
-    documentType: z.ZodEnum<["DRIVING_LICENSE", "VEHICLE_REGISTRATION", "INSURANCE"]>;
+    documentType: z.ZodEnum<["DRIVING_LICENSE"]>;
     documentNumber: z.ZodString;
     aadharNumber: z.ZodString;
-    panNumber: z.ZodString;
+    panNumber: z.ZodOptional<z.ZodString>;
     driverLicenseNumber: z.ZodString;
-    rcNumber: z.ZodString;
-    insuranceNumber: z.ZodString;
+    rcNumber: z.ZodOptional<z.ZodString>;
+    insuranceNumber: z.ZodOptional<z.ZodString>;
     expiryDate: z.ZodEffects<z.ZodString, string, string>;
 }, "strip", z.ZodTypeAny, {
     aadharNumber: string;
-    panNumber: string;
-    documentType: "DRIVING_LICENSE" | "VEHICLE_REGISTRATION" | "INSURANCE";
+    documentType: "DRIVING_LICENSE";
     documentNumber: string;
     expiryDate: string;
     driverLicenseNumber: string;
-    rcNumber: string;
-    insuranceNumber: string;
+    panNumber?: string | undefined;
+    rcNumber?: string | undefined;
+    insuranceNumber?: string | undefined;
 }, {
     aadharNumber: string;
-    panNumber: string;
-    documentType: "DRIVING_LICENSE" | "VEHICLE_REGISTRATION" | "INSURANCE";
+    documentType: "DRIVING_LICENSE";
     documentNumber: string;
     expiryDate: string;
     driverLicenseNumber: string;
-    rcNumber: string;
-    insuranceNumber: string;
+    panNumber?: string | undefined;
+    rcNumber?: string | undefined;
+    insuranceNumber?: string | undefined;
 }>, {
     aadharNumber: string;
-    panNumber: string;
-    documentType: "DRIVING_LICENSE" | "VEHICLE_REGISTRATION" | "INSURANCE";
+    documentType: "DRIVING_LICENSE";
     documentNumber: string;
     expiryDate: string;
     driverLicenseNumber: string;
-    rcNumber: string;
-    insuranceNumber: string;
+    panNumber?: string | undefined;
+    rcNumber?: string | undefined;
+    insuranceNumber?: string | undefined;
 }, {
     aadharNumber: string;
-    panNumber: string;
-    documentType: "DRIVING_LICENSE" | "VEHICLE_REGISTRATION" | "INSURANCE";
+    documentType: "DRIVING_LICENSE";
     documentNumber: string;
     expiryDate: string;
     driverLicenseNumber: string;
-    rcNumber: string;
-    insuranceNumber: string;
+    panNumber?: string | undefined;
+    rcNumber?: string | undefined;
+    insuranceNumber?: string | undefined;
 }>;
 export declare const multipleDocumentDataSchema: z.ZodEffects<z.ZodArray<z.ZodObject<{
-    documentType: z.ZodEnum<["DRIVING_LICENSE", "VEHICLE_REGISTRATION", "INSURANCE"]>;
+    documentType: z.ZodEnum<["DRIVING_LICENSE"]>;
     documentNumber: z.ZodOptional<z.ZodString>;
     driverLicenseNumber: z.ZodOptional<z.ZodString>;
     rcNumber: z.ZodOptional<z.ZodString>;
     expiryDate: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    documentType: "DRIVING_LICENSE" | "VEHICLE_REGISTRATION" | "INSURANCE";
+    documentType: "DRIVING_LICENSE";
     documentNumber?: string | undefined;
     expiryDate?: string | undefined;
     driverLicenseNumber?: string | undefined;
     rcNumber?: string | undefined;
 }, {
-    documentType: "DRIVING_LICENSE" | "VEHICLE_REGISTRATION" | "INSURANCE";
+    documentType: "DRIVING_LICENSE";
     documentNumber?: string | undefined;
     expiryDate?: string | undefined;
     driverLicenseNumber?: string | undefined;
     rcNumber?: string | undefined;
 }>, "many">, {
-    documentType: "DRIVING_LICENSE" | "VEHICLE_REGISTRATION" | "INSURANCE";
+    documentType: "DRIVING_LICENSE";
     documentNumber?: string | undefined;
     expiryDate?: string | undefined;
     driverLicenseNumber?: string | undefined;
     rcNumber?: string | undefined;
 }[], {
-    documentType: "DRIVING_LICENSE" | "VEHICLE_REGISTRATION" | "INSURANCE";
+    documentType: "DRIVING_LICENSE";
     documentNumber?: string | undefined;
     expiryDate?: string | undefined;
     driverLicenseNumber?: string | undefined;
