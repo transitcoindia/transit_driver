@@ -13,7 +13,13 @@ const razorpay = process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET
     })
   : null;
 
-type VehiclePlanType = "BIKE" | "AUTO" | "CAR";
+type VehiclePlanType =
+  | "BIKE"
+  | "AUTO"
+  | "HATCHBACK"
+  | "SEDAN"
+  | "PREMIUM_SEDAN"
+  | "XL";
 
 interface SubscriptionPlan {
   id: string;
@@ -24,31 +30,55 @@ interface SubscriptionPlan {
   includedMinutes: number | null; // null = unlimited minutes (date-based only)
 }
 
-// Subscription plan catalogue based on your matrix (12h per day; no 8h plans)
+// Subscription plan catalogue (as provided)
 const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   // Bike plans
-  { id: "bike_daily_4h", vehicleType: "BIKE", label: "Bike Daily 4h", price: 20, durationDays: 1, includedMinutes: 4 * 60 },
-  { id: "bike_daily_12h", vehicleType: "BIKE", label: "Bike Daily 12h", price: 60, durationDays: 1, includedMinutes: 12 * 60 },
-  { id: "bike_weekly_5d", vehicleType: "BIKE", label: "Bike Weekly 5x12h", price: 180, durationDays: 5, includedMinutes: 5 * 12 * 60 },
-  { id: "bike_weekly_7d", vehicleType: "BIKE", label: "Bike Weekly 7x12h", price: 250, durationDays: 7, includedMinutes: 7 * 12 * 60 },
-  { id: "bike_monthly_12h", vehicleType: "BIKE", label: "Bike Monthly 30x12h", price: 899, durationDays: 30, includedMinutes: 30 * 12 * 60 },
-  { id: "bike_monthly_unlimited", vehicleType: "BIKE", label: "Bike Monthly Unlimited", price: 1199, durationDays: 30, includedMinutes: null },
+  { id: "bike_daily_4h", vehicleType: "BIKE", label: "Bike Daily 4h", price: 7, durationDays: 1, includedMinutes: 4 * 60 },
+  { id: "bike_daily_12h", vehicleType: "BIKE", label: "Bike Daily 12h", price: 20, durationDays: 1, includedMinutes: 12 * 60 },
+  { id: "bike_weekly_5d", vehicleType: "BIKE", label: "Bike Weekly 5x12h", price: 99, durationDays: 5, includedMinutes: 5 * 12 * 60 },
+  { id: "bike_weekly_7d", vehicleType: "BIKE", label: "Bike Weekly 7x12h", price: 139, durationDays: 7, includedMinutes: 7 * 12 * 60 },
+  { id: "bike_weekly_unlimited", vehicleType: "BIKE", label: "Bike Weekly Unlimited", price: 79, durationDays: 7, includedMinutes: null },
+  { id: "bike_monthly_unlimited", vehicleType: "BIKE", label: "Bike Monthly Unlimited", price: 199, durationDays: 30, includedMinutes: null },
 
   // Auto plans
-  { id: "auto_daily_4h", vehicleType: "AUTO", label: "Auto Daily 4h", price: 25, durationDays: 1, includedMinutes: 4 * 60 },
-  { id: "auto_daily_12h", vehicleType: "AUTO", label: "Auto Daily 12h", price: 70, durationDays: 1, includedMinutes: 12 * 60 },
-  { id: "auto_weekly_5d", vehicleType: "AUTO", label: "Auto Weekly 5x12h", price: 220, durationDays: 5, includedMinutes: 5 * 12 * 60 },
-  { id: "auto_weekly_7d", vehicleType: "AUTO", label: "Auto Weekly 7x12h", price: 300, durationDays: 7, includedMinutes: 7 * 12 * 60 },
-  { id: "auto_monthly_12h", vehicleType: "AUTO", label: "Auto Monthly 30x12h", price: 999, durationDays: 30, includedMinutes: 30 * 12 * 60 },
-  { id: "auto_monthly_unlimited", vehicleType: "AUTO", label: "Auto Monthly Unlimited", price: 1399, durationDays: 30, includedMinutes: null },
+  { id: "auto_daily_4h", vehicleType: "AUTO", label: "Auto Daily 4h", price: 17, durationDays: 1, includedMinutes: 4 * 60 },
+  { id: "auto_daily_12h", vehicleType: "AUTO", label: "Auto Daily 12h", price: 50, durationDays: 1, includedMinutes: 12 * 60 },
+  { id: "auto_weekly_5d", vehicleType: "AUTO", label: "Auto Weekly 5x12h", price: 249, durationDays: 5, includedMinutes: 5 * 12 * 60 },
+  { id: "auto_weekly_7d", vehicleType: "AUTO", label: "Auto Weekly 7x12h", price: 349, durationDays: 7, includedMinutes: 7 * 12 * 60 },
+  { id: "auto_weekly_unlimited", vehicleType: "AUTO", label: "Auto Weekly Unlimited", price: 199, durationDays: 7, includedMinutes: null },
+  { id: "auto_monthly_unlimited", vehicleType: "AUTO", label: "Auto Monthly Unlimited", price: 399, durationDays: 30, includedMinutes: null },
 
-  // Car plans
-  { id: "car_daily_4h", vehicleType: "CAR", label: "Car Daily 4h", price: 30, durationDays: 1, includedMinutes: 4 * 60 },
-  { id: "car_daily_12h", vehicleType: "CAR", label: "Car Daily 12h", price: 90, durationDays: 1, includedMinutes: 12 * 60 },
-  { id: "car_weekly_5d", vehicleType: "CAR", label: "Car Weekly 5x12h", price: 280, durationDays: 5, includedMinutes: 5 * 12 * 60 },
-  { id: "car_weekly_7d", vehicleType: "CAR", label: "Car Weekly 7x12h", price: 350, durationDays: 7, includedMinutes: 7 * 12 * 60 },
-  { id: "car_monthly_12h", vehicleType: "CAR", label: "Car Monthly 30x12h", price: 1299, durationDays: 30, includedMinutes: 30 * 12 * 60 },
-  { id: "car_monthly_unlimited", vehicleType: "CAR", label: "Car Monthly Unlimited", price: 1699, durationDays: 30, includedMinutes: null },
+  // Hatchback plans
+  { id: "hatchback_daily_4h", vehicleType: "HATCHBACK", label: "Hatchback Daily 4h", price: 23, durationDays: 1, includedMinutes: 4 * 60 },
+  { id: "hatchback_daily_12h", vehicleType: "HATCHBACK", label: "Hatchback Daily 12h", price: 70, durationDays: 1, includedMinutes: 12 * 60 },
+  { id: "hatchback_weekly_5d", vehicleType: "HATCHBACK", label: "Hatchback Weekly 5x12h", price: 349, durationDays: 5, includedMinutes: 5 * 12 * 60 },
+  { id: "hatchback_weekly_7d", vehicleType: "HATCHBACK", label: "Hatchback Weekly 7x12h", price: 489, durationDays: 7, includedMinutes: 7 * 12 * 60 },
+  { id: "hatchback_weekly_unlimited", vehicleType: "HATCHBACK", label: "Hatchback Weekly Unlimited", price: 299, durationDays: 7, includedMinutes: null },
+  { id: "hatchback_monthly_unlimited", vehicleType: "HATCHBACK", label: "Hatchback Monthly Unlimited", price: 599, durationDays: 30, includedMinutes: null },
+
+  // Sedan plans
+  { id: "sedan_daily_4h", vehicleType: "SEDAN", label: "Sedan Daily 4h", price: 30, durationDays: 1, includedMinutes: 4 * 60 },
+  { id: "sedan_daily_12h", vehicleType: "SEDAN", label: "Sedan Daily 12h", price: 90, durationDays: 1, includedMinutes: 12 * 60 },
+  { id: "sedan_weekly_5d", vehicleType: "SEDAN", label: "Sedan Weekly 5x12h", price: 449, durationDays: 5, includedMinutes: 5 * 12 * 60 },
+  { id: "sedan_weekly_7d", vehicleType: "SEDAN", label: "Sedan Weekly 7x12h", price: 629, durationDays: 7, includedMinutes: 7 * 12 * 60 },
+  { id: "sedan_weekly_unlimited", vehicleType: "SEDAN", label: "Sedan Weekly Unlimited", price: 399, durationDays: 7, includedMinutes: null },
+  { id: "sedan_monthly_unlimited", vehicleType: "SEDAN", label: "Sedan Monthly Unlimited", price: 799, durationDays: 30, includedMinutes: null },
+
+  // Premium sedan plans
+  { id: "premium_sedan_daily_4h", vehicleType: "PREMIUM_SEDAN", label: "Premium Sedan Daily 4h", price: 37, durationDays: 1, includedMinutes: 4 * 60 },
+  { id: "premium_sedan_daily_12h", vehicleType: "PREMIUM_SEDAN", label: "Premium Sedan Daily 12h", price: 110, durationDays: 1, includedMinutes: 12 * 60 },
+  { id: "premium_sedan_weekly_5d", vehicleType: "PREMIUM_SEDAN", label: "Premium Sedan Weekly 5x12h", price: 549, durationDays: 5, includedMinutes: 5 * 12 * 60 },
+  { id: "premium_sedan_weekly_7d", vehicleType: "PREMIUM_SEDAN", label: "Premium Sedan Weekly 7x12h", price: 769, durationDays: 7, includedMinutes: 7 * 12 * 60 },
+  { id: "premium_sedan_weekly_unlimited", vehicleType: "PREMIUM_SEDAN", label: "Premium Sedan Weekly Unlimited", price: 499, durationDays: 7, includedMinutes: null },
+  { id: "premium_sedan_monthly_unlimited", vehicleType: "PREMIUM_SEDAN", label: "Premium Sedan Monthly Unlimited", price: 999, durationDays: 30, includedMinutes: null },
+
+  // XL plans
+  { id: "xl_daily_4h", vehicleType: "XL", label: "XL Daily 4h", price: 47, durationDays: 1, includedMinutes: 4 * 60 },
+  { id: "xl_daily_12h", vehicleType: "XL", label: "XL Daily 12h", price: 140, durationDays: 1, includedMinutes: 12 * 60 },
+  { id: "xl_weekly_5d", vehicleType: "XL", label: "XL Weekly 5x12h", price: 699, durationDays: 5, includedMinutes: 5 * 12 * 60 },
+  { id: "xl_weekly_7d", vehicleType: "XL", label: "XL Weekly 7x12h", price: 979, durationDays: 7, includedMinutes: 7 * 12 * 60 },
+  { id: "xl_weekly_unlimited", vehicleType: "XL", label: "XL Weekly Unlimited", price: 599, durationDays: 7, includedMinutes: null },
+  { id: "xl_monthly_unlimited", vehicleType: "XL", label: "XL Monthly Unlimited", price: 1299, durationDays: 30, includedMinutes: null },
 ];
 
 /**
@@ -159,7 +189,7 @@ export const createSubscriptionOrder = async (
 /**
  * Get subscription plans catalogue
  * GET /api/driver/subscription/plans
- * Query: vehicleType (optional) - BIKE | AUTO | CAR to filter plans
+ * Query: vehicleType (optional) - BIKE | AUTO | HATCHBACK | SEDAN | PREMIUM_SEDAN | XL
  */
 export const getSubscriptionPlans = async (
   req: Request,
@@ -171,7 +201,11 @@ export const getSubscriptionPlans = async (
     let plans = SUBSCRIPTION_PLANS;
     if (vehicleType) {
       const normalized = vehicleType.toUpperCase() as VehiclePlanType;
-      if (["BIKE", "AUTO", "CAR"].includes(normalized)) {
+      if (
+        ["BIKE", "AUTO", "HATCHBACK", "SEDAN", "PREMIUM_SEDAN", "XL"].includes(
+          normalized
+        )
+      ) {
         plans = SUBSCRIPTION_PLANS.filter((p) => p.vehicleType === normalized);
       }
     }
@@ -195,13 +229,17 @@ export const getSubscriptionPlans = async (
 };
 
 // Helper to map Vehicle.model/vehicleType to plan vehicle type
-function normalizeVehicleType(raw: string | null | undefined): VehiclePlanType | null {
+function normalizeVehicleType(
+  raw: string | null | undefined
+): VehiclePlanType | null {
   if (!raw) return null;
-  const v = raw.toLowerCase();
+  const v = raw.toLowerCase().trim();
   if (v.includes("bike") || v.includes("scooter") || v.includes("cycle")) return "BIKE";
   if (v.includes("auto") || v.includes("rickshaw") || v.includes("tuk")) return "AUTO";
-  // Default to CAR for typical car terms
-  if (v.includes("car") || v.includes("sedan") || v.includes("suv") || v.includes("hatch")) return "CAR";
+  if (v.includes("premium") && v.includes("sedan")) return "PREMIUM_SEDAN";
+  if (v.includes("xl") || v.includes("xuv") || v.includes("suv") || v.includes("cab_high")) return "XL";
+  if (v.includes("hatch") || v.includes("cab_low")) return "HATCHBACK";
+  if (v.includes("sedan") || v.includes("cab_medium") || v == "car") return "SEDAN";
   return null;
 }
 

@@ -808,13 +808,16 @@ export const getUserDetails = async (req: Request, res: Response, next: NextFunc
             console.warn('[getUserDetails] stale online sync failed:', e);
           }
         }
-        // Map vehicle type for subscription filtering: sedan/suv/hatchback -> CAR, bike -> BIKE, auto -> AUTO
+        // Keep raw vehicle type for UI and derive a specific category for subscription filtering.
         const rawVehicleType = (driver as any).vehicle?.[0]?.vehicleType?.toLowerCase?.();
         let vehicleTypeForPlans: string | null = null;
         if (rawVehicleType) {
             if (rawVehicleType === 'bike') vehicleTypeForPlans = 'BIKE';
             else if (rawVehicleType === 'auto') vehicleTypeForPlans = 'AUTO';
-            else if (['sedan', 'suv', 'hatchback', 'car'].includes(rawVehicleType)) vehicleTypeForPlans = 'CAR';
+            else if (rawVehicleType === 'hatchback' || rawVehicleType === 'cab_low') vehicleTypeForPlans = 'HATCHBACK';
+            else if (rawVehicleType === 'premium_sedan') vehicleTypeForPlans = 'PREMIUM_SEDAN';
+            else if (['xl', 'suv', 'xuv', 'cab_high'].includes(rawVehicleType)) vehicleTypeForPlans = 'XL';
+            else if (['sedan', 'car', 'cab_medium'].includes(rawVehicleType)) vehicleTypeForPlans = 'SEDAN';
         }
 
         // Merge Driver.averageRating/totalRatings (updated when riders rate) into driverDetails for ratings display
@@ -843,7 +846,8 @@ export const getUserDetails = async (req: Request, res: Response, next: NextFunc
                 driverDetails,
                 isOnline,
                 isAvailable,
-                vehicleType: vehicleTypeForPlans
+                vehicleType: rawVehicleType ?? null,
+                vehicleTypeForPlans
             }
         });
     } catch (error) {

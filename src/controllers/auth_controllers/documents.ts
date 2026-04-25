@@ -736,7 +736,8 @@ export const createOrUpdateVehicleInfo = async (
     // 2) Fallback to inferring from model name
     const getVehicleTypeFromModel = (model: string): string => {
       const modelLower = model.toLowerCase();
-      if (modelLower.includes('suv') || modelLower.includes('xuv')) return 'suv';
+      if (modelLower.includes('premium') && modelLower.includes('sedan')) return 'premium_sedan';
+      if (modelLower.includes('suv') || modelLower.includes('xuv') || modelLower.includes('xl')) return 'xl';
       if (modelLower.includes('hatch') || modelLower.includes('hatchback')) return 'hatchback';
       if (modelLower.includes('sedan')) return 'sedan';
       if (modelLower.includes('van')) return 'van';
@@ -748,7 +749,8 @@ export const createOrUpdateVehicleInfo = async (
       if (!raw) return null;
       const v = raw.trim().toLowerCase();
       if (v === 'auto' || v === 'autorickshaw') return 'auto';
-      if (v === 'suv' || v === 'xl') return 'suv';
+      if (v === 'premium_sedan' || v === 'premium-sedan') return 'premium_sedan';
+      if (v === 'suv' || v === 'xuv' || v === 'xl') return 'xl';
       if (v === 'hatch' || v === 'hatchback' || v === 'compact') return 'hatchback';
       if (v === 'sedan' || v === 'car') return 'sedan';
       if (v === 'bike' || v === 'motorbike' || v === 'two_wheeler' || v === 'two-wheeler') return 'bike';
