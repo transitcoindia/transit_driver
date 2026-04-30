@@ -96,6 +96,14 @@ export const getAllDrivers = async (
               isAvailable: true,
             }
           },
+          driverWallet: {
+            select: {
+              id: true,
+              balance: true,
+              currency: true,
+              updatedAt: true,
+            },
+          },
         },
       }),
       prisma.driver.count({ where }),
@@ -123,6 +131,110 @@ export const getAllDrivers = async (
       console.error("Prisma error message:", error.message);
     }
     return next(new AppError(`Failed to fetch drivers: ${error.message || 'Unknown error'}`, 500));
+  }
+};
+
+/**
+ * Credit driver wallet (admin only)
+ * POST /api/driver/admin/:driverId/wallet/credit
+ */
+export const creditDriverWallet = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<any> => {
+  try {
+    const user = req.user;
+    if (!user || !user.isAdmin) {
+      return next(new AppError("Admin access required", 403));
+    }
+
+    const { driverId } = req.params;
+    const { amount, note } = req.body as {
+      amount?: number | string;
+      note?: string;
+    };
+
+    const parsedAmount =
+      typeof amount === "string" ? Number.parseFloat(amount) : amount;
+    if (!driverId || !Number.isFinite(parsedAmount) || parsedAmount! <= 0) {
+      return next(
+        new AppError("driverId and a valid amount greater than 0 are required", 400)
+      );
+    }
+
+    const driver = await prisma.driver.findUnique({
+      where: { id: driverId },
+      select: { id: true, name: true, accountActive: true },
+    });
+    if (!driver) {
+      return next(new AppError("Driver not found", 404));
+    }
+
+    const sanitizedNote =
+      typeof note === "string" && note.trim().length > 0
+        ? note.trim().slice(0, 200)
+        : null;
+    const creditAmount = Math.round(parsedAmount! * 100) / 100;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const wallet =
+        (await tx.driverWallet.findUnique({ where: { driverId } })) ??
+        (await tx.driverWallet.create({ data: { driverId } }));
+
+      const balanceBefore = wallet.balance;
+      const balanceAfter = Math.round((balanceBefore + creditAmount) * 100) / 100;
+
+      const updatedWallet = await tx.driverWallet.update({
+        where: { id: wallet.id },
+        data: { balance: balanceAfter },
+      });
+
+      const transaction = await tx.driverWalletTransaction.create({
+        data: {
+          driverWalletId: wallet.id,
+          type: "credit",
+          amount: creditAmount,
+          balanceBefore,
+          balanceAfter,
+          description: sanitizedNote
+            ? `Admin wallet credit: ${sanitizedNote}`
+            : "Admin wallet credit",
+          referenceType: "admin_credit",
+          referenceId: user.id,
+        },
+      });
+
+      return { updatedWallet, transaction };
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `₹${creditAmount.toFixed(2)} added to ${driver.name}'s wallet`,
+      data: {
+        driver: {
+          id: driver.id,
+          name: driver.name,
+          accountActive: driver.accountActive,
+        },
+        wallet: {
+          balance: result.updatedWallet.balance,
+          currency: result.updatedWallet.currency,
+          updatedAt: result.updatedWallet.updatedAt,
+        },
+        transaction: {
+          id: result.transaction.id,
+          amount: result.transaction.amount,
+          balanceBefore: result.transaction.balanceBefore,
+          balanceAfter: result.transaction.balanceAfter,
+          description: result.transaction.description,
+          createdAt: result.transaction.createdAt,
+        },
+      },
+    });
+  } catch (error: any) {
+    console.error("Error crediting driver wallet:", error);
+    return next(new AppError("Failed to credit driver wallet", 500));
   }
 };
 

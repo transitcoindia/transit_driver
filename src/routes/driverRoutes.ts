@@ -81,6 +81,7 @@ import {
     suspendDriver,
     updateDriverApproval,
     getDriverStrikesAdmin,
+    creditDriverWallet,
 } from '../controllers/admin/driverAdmin';
 
 // Create uploads directory if it doesn't exist
@@ -289,5 +290,6 @@ router.get('/admin/suspend', suspendDriver as RequestHandler); // Email token-ba
 router.post('/admin/suspend', suspendDriver as RequestHandler); // Email token-based suspension (POST)
 router.patch('/admin/:driverId/approval', authenticateAdmin as RequestHandler, updateDriverApproval as RequestHandler);
 router.get('/admin/strikes/:driverId', authenticateAdmin as RequestHandler, getDriverStrikesAdmin as RequestHandler);
+router.post('/admin/:driverId/wallet/credit', authenticateAdmin as RequestHandler, creditDriverWallet as RequestHandler);
 
 export default router;

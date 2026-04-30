@@ -206,5 +206,6 @@ router.get('/admin/suspend', driverAdmin_1.suspendDriver); // Email token-based 
 router.post('/admin/suspend', driverAdmin_1.suspendDriver); // Email token-based suspension (POST)
 router.patch('/admin/:driverId/approval', authMiddle_1.authenticateAdmin, driverAdmin_1.updateDriverApproval);
 router.get('/admin/strikes/:driverId', authMiddle_1.authenticateAdmin, driverAdmin_1.getDriverStrikesAdmin);
+router.post('/admin/:driverId/wallet/credit', authMiddle_1.authenticateAdmin, driverAdmin_1.creditDriverWallet);
 exports.default = router;
 //# sourceMappingURL=driverRoutes.js.map
