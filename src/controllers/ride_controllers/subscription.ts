@@ -30,54 +30,47 @@ interface SubscriptionPlan {
   includedMinutes: number | null; // null = unlimited minutes (date-based only)
 }
 
-// Subscription plan catalogue (as provided)
+// Subscription plan catalogue (prices/minutes as per current tariff)
 const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
-  // Bike plans
-  { id: "bike_daily_4h", vehicleType: "BIKE", label: "Bike Daily 4h", price: 7, durationDays: 1, includedMinutes: 4 * 60 },
-  { id: "bike_daily_12h", vehicleType: "BIKE", label: "Bike Daily 12h", price: 20, durationDays: 1, includedMinutes: 12 * 60 },
-  { id: "bike_weekly_5d", vehicleType: "BIKE", label: "Bike Weekly 5x12h", price: 99, durationDays: 5, includedMinutes: 5 * 12 * 60 },
-  { id: "bike_weekly_7d", vehicleType: "BIKE", label: "Bike Weekly 7x12h", price: 139, durationDays: 7, includedMinutes: 7 * 12 * 60 },
+  // Bike
+  { id: "bike_daily_24h", vehicleType: "BIKE", label: "Bike Daily 24h", price: 20, durationDays: 1, includedMinutes: 24 * 60 },
+  { id: "bike_weekly_5d", vehicleType: "BIKE", label: "Bike Weekly 5x12h", price: 100, durationDays: 5, includedMinutes: 3600 },
+  { id: "bike_weekly_7d", vehicleType: "BIKE", label: "Bike Weekly 7x12h", price: 140, durationDays: 7, includedMinutes: 5040 },
   { id: "bike_weekly_unlimited", vehicleType: "BIKE", label: "Bike Weekly Unlimited", price: 79, durationDays: 7, includedMinutes: null },
   { id: "bike_monthly_unlimited", vehicleType: "BIKE", label: "Bike Monthly Unlimited", price: 199, durationDays: 30, includedMinutes: null },
 
-  // Auto plans
-  { id: "auto_daily_4h", vehicleType: "AUTO", label: "Auto Daily 4h", price: 17, durationDays: 1, includedMinutes: 4 * 60 },
-  { id: "auto_daily_12h", vehicleType: "AUTO", label: "Auto Daily 12h", price: 50, durationDays: 1, includedMinutes: 12 * 60 },
-  { id: "auto_weekly_5d", vehicleType: "AUTO", label: "Auto Weekly 5x12h", price: 249, durationDays: 5, includedMinutes: 5 * 12 * 60 },
-  { id: "auto_weekly_7d", vehicleType: "AUTO", label: "Auto Weekly 7x12h", price: 349, durationDays: 7, includedMinutes: 7 * 12 * 60 },
+  // Auto
+  { id: "auto_daily_24h", vehicleType: "AUTO", label: "Auto Daily 24h", price: 50, durationDays: 1, includedMinutes: 24 * 60 },
+  { id: "auto_weekly_5d", vehicleType: "AUTO", label: "Auto Weekly 5x12h", price: 250, durationDays: 5, includedMinutes: 3600 },
+  { id: "auto_weekly_7d", vehicleType: "AUTO", label: "Auto Weekly 7x12h", price: 350, durationDays: 7, includedMinutes: 5040 },
   { id: "auto_weekly_unlimited", vehicleType: "AUTO", label: "Auto Weekly Unlimited", price: 199, durationDays: 7, includedMinutes: null },
   { id: "auto_monthly_unlimited", vehicleType: "AUTO", label: "Auto Monthly Unlimited", price: 399, durationDays: 30, includedMinutes: null },
 
-  // Hatchback plans
-  { id: "hatchback_daily_4h", vehicleType: "HATCHBACK", label: "Hatchback Daily 4h", price: 23, durationDays: 1, includedMinutes: 4 * 60 },
-  { id: "hatchback_daily_12h", vehicleType: "HATCHBACK", label: "Hatchback Daily 12h", price: 70, durationDays: 1, includedMinutes: 12 * 60 },
-  { id: "hatchback_weekly_5d", vehicleType: "HATCHBACK", label: "Hatchback Weekly 5x12h", price: 349, durationDays: 5, includedMinutes: 5 * 12 * 60 },
-  { id: "hatchback_weekly_7d", vehicleType: "HATCHBACK", label: "Hatchback Weekly 7x12h", price: 489, durationDays: 7, includedMinutes: 7 * 12 * 60 },
+  // Hatchback
+  { id: "hatchback_daily_24h", vehicleType: "HATCHBACK", label: "Hatchback Daily 24h", price: 70, durationDays: 1, includedMinutes: 24 * 60 },
+  { id: "hatchback_weekly_5d", vehicleType: "HATCHBACK", label: "Hatchback Weekly 5x12h", price: 350, durationDays: 5, includedMinutes: 3600 },
+  { id: "hatchback_weekly_7d", vehicleType: "HATCHBACK", label: "Hatchback Weekly 7x12h", price: 490, durationDays: 7, includedMinutes: 5040 },
   { id: "hatchback_weekly_unlimited", vehicleType: "HATCHBACK", label: "Hatchback Weekly Unlimited", price: 299, durationDays: 7, includedMinutes: null },
   { id: "hatchback_monthly_unlimited", vehicleType: "HATCHBACK", label: "Hatchback Monthly Unlimited", price: 599, durationDays: 30, includedMinutes: null },
 
-  // Sedan plans
-  { id: "sedan_daily_4h", vehicleType: "SEDAN", label: "Sedan Daily 4h", price: 30, durationDays: 1, includedMinutes: 4 * 60 },
-  { id: "sedan_daily_12h", vehicleType: "SEDAN", label: "Sedan Daily 12h", price: 90, durationDays: 1, includedMinutes: 12 * 60 },
-  { id: "sedan_weekly_5d", vehicleType: "SEDAN", label: "Sedan Weekly 5x12h", price: 449, durationDays: 5, includedMinutes: 5 * 12 * 60 },
-  { id: "sedan_weekly_7d", vehicleType: "SEDAN", label: "Sedan Weekly 7x12h", price: 629, durationDays: 7, includedMinutes: 7 * 12 * 60 },
+  // Sedan
+  { id: "sedan_daily_24h", vehicleType: "SEDAN", label: "Sedan Daily 24h", price: 90, durationDays: 1, includedMinutes: 24 * 60 },
+  { id: "sedan_weekly_5d", vehicleType: "SEDAN", label: "Sedan Weekly 5x12h", price: 450, durationDays: 5, includedMinutes: 3600 },
+  { id: "sedan_weekly_7d", vehicleType: "SEDAN", label: "Sedan Weekly 7x12h", price: 630, durationDays: 7, includedMinutes: 5040 },
   { id: "sedan_weekly_unlimited", vehicleType: "SEDAN", label: "Sedan Weekly Unlimited", price: 399, durationDays: 7, includedMinutes: null },
   { id: "sedan_monthly_unlimited", vehicleType: "SEDAN", label: "Sedan Monthly Unlimited", price: 799, durationDays: 30, includedMinutes: null },
 
-  // Premium sedan plans
-  { id: "premium_sedan_daily_4h", vehicleType: "PREMIUM_SEDAN", label: "Premium Sedan Daily 4h", price: 37, durationDays: 1, includedMinutes: 4 * 60 },
-  { id: "premium_sedan_daily_12h", vehicleType: "PREMIUM_SEDAN", label: "Premium Sedan Daily 12h", price: 110, durationDays: 1, includedMinutes: 12 * 60 },
-  { id: "premium_sedan_weekly_5d", vehicleType: "PREMIUM_SEDAN", label: "Premium Sedan Weekly 5x12h", price: 549, durationDays: 5, includedMinutes: 5 * 12 * 60 },
-  { id: "premium_sedan_weekly_7d", vehicleType: "PREMIUM_SEDAN", label: "Premium Sedan Weekly 7x12h", price: 769, durationDays: 7, includedMinutes: 7 * 12 * 60 },
+  // Premium sedan
+  { id: "premium_sedan_daily_24h", vehicleType: "PREMIUM_SEDAN", label: "Premium Sedan Daily 24h", price: 110, durationDays: 1, includedMinutes: 24 * 60 },
+  { id: "premium_sedan_weekly_5d", vehicleType: "PREMIUM_SEDAN", label: "Premium Sedan Weekly 5x12h", price: 550, durationDays: 5, includedMinutes: 3600 },
+  { id: "premium_sedan_weekly_7d", vehicleType: "PREMIUM_SEDAN", label: "Premium Sedan Weekly 7x12h", price: 770, durationDays: 7, includedMinutes: 5040 },
   { id: "premium_sedan_weekly_unlimited", vehicleType: "PREMIUM_SEDAN", label: "Premium Sedan Weekly Unlimited", price: 499, durationDays: 7, includedMinutes: null },
   { id: "premium_sedan_monthly_unlimited", vehicleType: "PREMIUM_SEDAN", label: "Premium Sedan Monthly Unlimited", price: 999, durationDays: 30, includedMinutes: null },
 
-  // XL plans
-  { id: "xl_daily_4h", vehicleType: "XL", label: "XL Daily 4h", price: 47, durationDays: 1, includedMinutes: 4 * 60 },
-  { id: "xl_daily_12h", vehicleType: "XL", label: "XL Daily 12h", price: 140, durationDays: 1, includedMinutes: 12 * 60 },
-  { id: "xl_weekly_5d", vehicleType: "XL", label: "XL Weekly 5x12h", price: 699, durationDays: 5, includedMinutes: 5 * 12 * 60 },
-  { id: "xl_weekly_7d", vehicleType: "XL", label: "XL Weekly 7x12h", price: 979, durationDays: 7, includedMinutes: 7 * 12 * 60 },
-  { id: "xl_weekly_unlimited", vehicleType: "XL", label: "XL Weekly Unlimited", price: 599, durationDays: 7, includedMinutes: null },
+  // XL (no weekly unlimited in current tariff)
+  { id: "xl_daily_24h", vehicleType: "XL", label: "XL Daily 24h", price: 140, durationDays: 1, includedMinutes: 24 * 60 },
+  { id: "xl_weekly_5d", vehicleType: "XL", label: "XL Weekly 5x12h", price: 700, durationDays: 5, includedMinutes: 3600 },
+  { id: "xl_weekly_7d", vehicleType: "XL", label: "XL Weekly 7x12h", price: 980, durationDays: 7, includedMinutes: 5040 },
   { id: "xl_monthly_unlimited", vehicleType: "XL", label: "XL Monthly Unlimited", price: 1299, durationDays: 30, includedMinutes: null },
 ];
 
