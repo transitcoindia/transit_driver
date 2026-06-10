@@ -60,6 +60,7 @@ import {
 import { getWalletBalance, getWalletTransactions, createTopUpOrder, verifyTopUp } from '../controllers/ride_controllers/wallet';
 import { getReferralInfo } from '../controllers/ride_controllers/referral';
 import { updateDriverProfile, uploadDriverProfileImage, uploadVerificationSelfie } from '../controllers/auth_controllers/profile';
+import { deleteDriverAccount } from '../controllers/auth_controllers/account';
 import {
   addEmergencyContact,
   getEmergencyContacts,
@@ -204,6 +205,7 @@ router.post('/profile/request-phone-otp', authenticate as RequestHandler, reques
 router.post('/profile/verify-phone-otp', authenticate as RequestHandler, verifyProfilePhoneOtp as RequestHandler);
 router.post('/profile/image', authenticate as RequestHandler, profileImageUpload as any, uploadDriverProfileImage as RequestHandler);
 router.post('/profile/verification-selfie', authenticate as RequestHandler, verificationSelfieUpload as any, uploadVerificationSelfie as RequestHandler);
+router.delete('/account', authenticate as RequestHandler, deleteDriverAccount as RequestHandler);
 
 // Emergency contacts (driver profile)
 router.get('/emergency/contacts', authenticate as RequestHandler, getEmergencyContacts as RequestHandler);
