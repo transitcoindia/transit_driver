@@ -38,13 +38,16 @@ export const driverVehicleInfoSchema = z.object({
 // Driver document upload validation schema
 export const driverDocumentSchema = z.object({
     documentType: z.enum([
-        "DRIVING_LICENSE"
+        "DRIVING_LICENSE",
+        "AADHAR",
+        "VEHICLE_REGISTRATION",
     ]),
-    documentNumber: z.string(),
+    documentNumber: z.string().optional(),
     aadharNumber: z.string()
-        .regex(/^\d{12}$/, "Aadhaar number must be 12 digits"),
+        .regex(/^\d{12}$/, "Aadhaar number must be 12 digits")
+        .optional(),
     panNumber: z.string().optional(),
-    driverLicenseNumber: z.string(),
+    driverLicenseNumber: z.string().optional(),
     rcNumber: z.string().optional(),
     insuranceNumber: z.string().optional(),
     expiryDate: z.string().refine((val) => {
@@ -53,10 +56,15 @@ export const driverDocumentSchema = z.object({
         return !isNaN(date.getTime()) && date > new Date();
     }, {
         message: "Expiry date must be in the future",
-    }),
+    }).optional(),
 }).refine((data) => {
-    // When document type is DRIVING_LICENSE, require driver license number
-    if (data.documentType === "DRIVING_LICENSE" && !data.driverLicenseNumber) {
+    if (data.documentType === "DRIVING_LICENSE" && !data.driverLicenseNumber && !data.documentNumber) {
+        return false;
+    }
+    if (data.documentType === "VEHICLE_REGISTRATION" && !data.rcNumber && !data.documentNumber) {
+        return false;
+    }
+    if (data.documentType === "AADHAR" && !data.documentNumber && !data.aadharNumber) {
         return false;
     }
     return true;
@@ -68,7 +76,9 @@ export const driverDocumentSchema = z.object({
 // Document data for multiple document upload
 export const multipleDocumentDataSchema = z.array(z.object({
     documentType: z.enum([
-        "DRIVING_LICENSE"
+        "DRIVING_LICENSE",
+        "AADHAR",
+        "VEHICLE_REGISTRATION",
     ]),
     documentNumber: z.string().optional(),
     driverLicenseNumber: z.string().optional(),
@@ -76,8 +86,13 @@ export const multipleDocumentDataSchema = z.array(z.object({
     expiryDate: z.string().optional(),
 })).refine(items => {
     return items.every(item => {
-        // When document type is DRIVING_LICENSE, require driver license number
-        if (item.documentType === "DRIVING_LICENSE" && !item.driverLicenseNumber) {
+        if (item.documentType === "DRIVING_LICENSE" && !item.driverLicenseNumber && !item.documentNumber) {
+            return false;
+        }
+        if (item.documentType === "VEHICLE_REGISTRATION" && !item.rcNumber && !item.documentNumber) {
+            return false;
+        }
+        if (item.documentType === "AADHAR" && !item.documentNumber) {
             return false;
         }
         return true;

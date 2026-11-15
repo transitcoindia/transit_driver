@@ -39,8 +39,12 @@ export const getDocumentStatus = async (
       });
     }
 
-    // Required document types for onboarding (simplified flow)
-    const requiredDocTypes = ["DRIVING_LICENSE"];
+    // Required document types for onboarding: RC, Aadhaar, Driving License
+    const requiredDocTypes = [
+      "DRIVING_LICENSE",
+      "AADHAR",
+      "VEHICLE_REGISTRATION",
+    ];
 
     // Check which documents are uploaded and verified
     const docStatus: any = {};
@@ -242,8 +246,12 @@ export const uploadDocuments = async (
       );
     }
 
-    // Check for required document types (simplified onboarding)
-    const requiredDocTypes = ["DRIVING_LICENSE"];
+    // Required document types: RC, Aadhaar, Driving License
+    const requiredDocTypes = [
+      "DRIVING_LICENSE",
+      "AADHAR",
+      "VEHICLE_REGISTRATION",
+    ];
     const uploadedDocTypes = documentData.map((doc) => doc.documentType);
 
     // Verify all required document types are included
@@ -304,6 +312,12 @@ export const uploadDocuments = async (
             validationError = "RC number is required";
           }
           documentNumber = data.rcNumber || data.documentNumber;
+        } else if (data.documentType === "AADHAR") {
+          if (!data.documentNumber) {
+            isValid = false;
+            validationError = "Aadhaar number is required";
+          }
+          documentNumber = data.documentNumber;
         }
 
         // Validate expiry date if provided (should be future date)
